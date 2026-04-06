@@ -1,0 +1,15 @@
+config/*
+!config/.gitkeep
+!config/*.example.json
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+src/*.egg-info/

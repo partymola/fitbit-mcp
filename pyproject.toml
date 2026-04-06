@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fitbit-mcp"
+version = "0.1.0"
+description = "MCP server for the Fitbit Web API with OAuth PKCE, local cache, and trend analysis."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+keywords = ["fitbit", "mcp", "model-context-protocol", "health", "fitness", "sleep"]
+authors = [
+    {name = "jjdelrio", email = "641373+partymola@users.noreply.github.com"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = [
+    "mcp>=1.6.0",
+    "anyio>=4.0",
+]
+
+[project.scripts]
+fitbit-mcp = "fitbit_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/partymola/fitbit-mcp"
+Repository = "https://github.com/partymola/fitbit-mcp"
+"Bug Tracker" = "https://github.com/partymola/fitbit-mcp/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.25.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
