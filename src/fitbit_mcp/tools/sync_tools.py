@@ -2,7 +2,7 @@
 
 import logging
 import time
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 import anyio
 
@@ -273,6 +273,25 @@ def run_sync(data_types: list[str], days: int = 30) -> dict:
 
     conn.close()
     return results
+
+
+def auto_sync_if_stale(data_type: str) -> None:
+    """Sync data_type if it has never been synced or last sync was before today.
+
+    Failures are silently suppressed - the caller should still query the cache.
+    This ensures tools work on first use without requiring an explicit fitbit_sync call.
+    """
+    conn = db.get_db()
+    last_sync = db.get_last_sync_time(conn, data_type)
+    conn.close()
+
+    if last_sync is not None and last_sync.date() >= date.today():
+        return
+
+    try:
+        run_sync([data_type])
+    except Exception:
+        logger.debug("Auto-sync failed for %s", data_type, exc_info=True)
 
 
 @mcp.tool()

@@ -185,6 +185,17 @@ _DATA_TABLE_MAP: dict[str, str] = {
 }
 
 
+def get_last_sync_time(conn: sqlite3.Connection, data_type: str) -> datetime | None:
+    """Return the timestamp of the most recent successful sync for a data type."""
+    row = conn.execute(
+        "SELECT MAX(synced_at) AS t FROM sync_log WHERE data_type = ? AND status = 'ok'",
+        (data_type,),
+    ).fetchone()
+    if row and row["t"]:
+        return datetime.fromisoformat(row["t"])
+    return None
+
+
 def get_last_synced_date(conn: sqlite3.Connection, data_type: str) -> str | None:
     """Return the most recent date synced for a data type, from the actual data table."""
     table = _DATA_TABLE_MAP.get(data_type)

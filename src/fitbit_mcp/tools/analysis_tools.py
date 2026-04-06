@@ -9,6 +9,7 @@ import anyio
 from ..mcp_instance import mcp
 from ..helpers import format_response, require_auth, parse_date, format_duration
 from .. import db
+from .sync_tools import auto_sync_if_stale
 
 
 def _get_period_key(ds: str, period: str) -> str:
@@ -33,7 +34,7 @@ def _avg(values: list) -> float | None:
 def _trend_heart_rate(conn, start_date: str, end_date: str, period: str) -> dict:
     rows = db.query_heart_rate(conn, start_date, end_date)
     if not rows:
-        return {"message": "No heart rate data in cache. Run fitbit_sync first."}
+        return {"message": "No heart rate data in cache. No data recorded for this period."}
 
     buckets = defaultdict(list)
     for r in rows:
@@ -57,7 +58,7 @@ def _trend_heart_rate(conn, start_date: str, end_date: str, period: str) -> dict
 def _trend_activity(conn, start_date: str, end_date: str, period: str) -> dict:
     rows = db.query_activity(conn, start_date, end_date)
     if not rows:
-        return {"message": "No activity data in cache. Run fitbit_sync first."}
+        return {"message": "No activity data in cache. No data recorded for this period."}
 
     buckets = defaultdict(lambda: defaultdict(list))
     for r in rows:
@@ -85,7 +86,7 @@ def _trend_activity(conn, start_date: str, end_date: str, period: str) -> dict:
 def _trend_sleep(conn, start_date: str, end_date: str, period: str) -> dict:
     rows = db.query_sleep(conn, start_date, end_date)
     if not rows:
-        return {"message": "No sleep data in cache. Run fitbit_sync first."}
+        return {"message": "No sleep data in cache. No data recorded for this period."}
 
     buckets = defaultdict(lambda: defaultdict(list))
     for r in rows:
@@ -113,7 +114,7 @@ def _trend_sleep(conn, start_date: str, end_date: str, period: str) -> dict:
 def _trend_weight(conn, start_date: str, end_date: str, period: str) -> dict:
     rows = db.query_weight(conn, start_date, end_date)
     if not rows:
-        return {"message": "No weight data in cache. Run fitbit_sync first."}
+        return {"message": "No weight data in cache. No data recorded for this period."}
 
     buckets = defaultdict(lambda: defaultdict(list))
     for r in rows:
@@ -139,7 +140,7 @@ def _trend_weight(conn, start_date: str, end_date: str, period: str) -> dict:
 def _trend_spo2(conn, start_date: str, end_date: str, period: str) -> dict:
     rows = db.query_spo2(conn, start_date, end_date)
     if not rows:
-        return {"message": "No SpO2 data in cache. Run fitbit_sync first."}
+        return {"message": "No SpO2 data in cache. No data recorded for this period."}
 
     buckets = defaultdict(lambda: defaultdict(list))
     for r in rows:
@@ -165,7 +166,7 @@ def _trend_spo2(conn, start_date: str, end_date: str, period: str) -> dict:
 def _trend_exercises(conn, start_date: str, end_date: str, period: str) -> dict:
     rows = db.query_exercises(conn, start_date, end_date)
     if not rows:
-        return {"message": "No exercise data in cache. Run fitbit_sync first."}
+        return {"message": "No exercise data in cache. No data recorded for this period."}
 
     buckets = defaultdict(lambda: defaultdict(list))
     for r in rows:
@@ -193,7 +194,7 @@ def _trend_exercises(conn, start_date: str, end_date: str, period: str) -> dict:
 def _trend_hrv(conn, start_date: str, end_date: str, period: str) -> dict:
     rows = db.query_hrv(conn, start_date, end_date)
     if not rows:
-        return {"message": "No HRV data in cache. Run fitbit_sync first."}
+        return {"message": "No HRV data in cache. No data recorded for this period."}
 
     buckets = defaultdict(lambda: defaultdict(list))
     for r in rows:
@@ -311,8 +312,8 @@ async def fitbit_trends(
 ) -> str:
     """Analyse trends in cached Fitbit data.
 
-    Computes averages and totals over time from the local cache.
-    Run fitbit_sync first to populate data.
+    Computes averages and totals over time from the local cache,
+    auto-syncing if stale.
 
     Args:
         data_type: What to analyse. Options: "heart_rate", "activity",
@@ -333,6 +334,7 @@ async def fitbit_trends(
     Not for raw data - use fitbit_get_* tools instead.
     """
     def _analyse():
+        auto_sync_if_stale(data_type)
         conn = db.get_db()
 
         if compare:

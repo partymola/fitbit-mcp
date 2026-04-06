@@ -7,6 +7,7 @@ import anyio
 from ..mcp_instance import mcp
 from ..helpers import format_response, require_auth, parse_date
 from .. import api, db
+from .sync_tools import auto_sync_if_stale
 
 
 def _fetch_live(start_date, end_date) -> list[dict]:
@@ -70,6 +71,7 @@ async def fitbit_get_sleep(
     if live:
         entries = await anyio.to_thread.run_sync(lambda: _fetch_live(start, end))
     else:
+        await anyio.to_thread.run_sync(lambda: auto_sync_if_stale("sleep"))
         def _query():
             conn = db.get_db()
             rows = db.query_sleep(conn, start.isoformat(), end.isoformat())
@@ -80,7 +82,7 @@ async def fitbit_get_sleep(
     if not entries:
         return format_response({
             "message": "No sleep data found for this period.",
-            "hint": "Run fitbit_sync first, or try live=True.",
+            "hint": "Try live=True to fetch directly from the API.",
         })
 
     return format_response({"sleep": entries, "count": len(entries)})

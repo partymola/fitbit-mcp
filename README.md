@@ -69,9 +69,10 @@ Tokens are stored in `~/.config/fitbit-mcp/fitbit_tokens.json` with 0600 permiss
 claude mcp add -s user fitbit -- fitbit-mcp
 ```
 
-### 5. First sync
+### 5. First sync (optional)
 
-Once registered, ask Claude to run `fitbit_sync` or use the CLI:
+Query tools auto-sync on first use, so you can skip this step. To pre-populate
+the cache or sync a longer history, run:
 
 ```bash
 fitbit-mcp sync --days 30
@@ -91,11 +92,14 @@ fitbit-mcp import       Import existing JSON data files
 
 ## MCP tool reference
 
+Query tools auto-sync on the first query of each day per data type. Use `live=True`
+to bypass the cache entirely and fetch directly from the API.
+
 All query tools accept these common parameters:
 
 - `start_date` - Start date as `YYYY-MM-DD`, `YYYY-MM`, or `30d` (relative). Default: last 30 days.
 - `end_date` - End date as `YYYY-MM-DD`. Default: today.
-- `live` - If true, fetch from Fitbit API instead of cache.
+- `live` - If true, fetch from Fitbit API instead of cache (bypasses auto-sync).
 
 `fitbit_get_exercises` also accepts:
 
@@ -103,7 +107,7 @@ All query tools accept these common parameters:
 
 ### fitbit_sync
 
-Syncs data from the Fitbit API to the local SQLite cache. Run this before using query tools.
+Syncs data from the Fitbit API to the local SQLite cache. Query tools call this automatically on first use of the day, so explicit calls are only needed for longer history or forced refresh.
 
 - `data_types` - What to sync: `all`, `heart_rate`, `activity`, `exercises`, `sleep`, `weight`, `spo2`, `hrv`. Comma-separated. Default: `all`.
 - `days` - Days of history for first sync (default: 30). Subsequent syncs are incremental.

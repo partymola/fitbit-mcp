@@ -7,6 +7,7 @@ import anyio
 from ..mcp_instance import mcp
 from ..helpers import format_response, require_auth, parse_date
 from .. import api, db
+from .sync_tools import auto_sync_if_stale
 
 
 def _fetch_live(start_date, end_date) -> list[dict]:
@@ -39,8 +40,8 @@ async def fitbit_get_heart_rate(
     """Get daily resting heart rate and heart rate zones.
 
     Returns resting HR and zone breakdown (Out of Range, Fat Burn, Cardio, Peak)
-    from the local cache by default. Use live=True to fetch from Fitbit API.
-    Run fitbit_sync first to populate the cache.
+    from the local cache by default, auto-syncing if stale. Use live=True to
+    bypass the cache entirely.
 
     Args:
         start_date: Start date as "YYYY-MM-DD", "YYYY-MM", or "30d". Default: last 30 days.
@@ -55,6 +56,7 @@ async def fitbit_get_heart_rate(
     if live:
         entries = await anyio.to_thread.run_sync(lambda: _fetch_live(start, end))
     else:
+        await anyio.to_thread.run_sync(lambda: auto_sync_if_stale("heart_rate"))
         def _query():
             conn = db.get_db()
             rows = db.query_heart_rate(conn, start.isoformat(), end.isoformat())
@@ -65,7 +67,7 @@ async def fitbit_get_heart_rate(
     if not entries:
         return format_response({
             "message": "No heart rate data found for this period.",
-            "hint": "Run fitbit_sync first, or try live=True.",
+            "hint": "Try live=True to fetch directly from the API.",
         })
 
     return format_response({"heart_rate": entries, "count": len(entries)})
