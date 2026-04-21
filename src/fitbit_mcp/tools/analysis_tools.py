@@ -221,11 +221,11 @@ def _parse_compare_range(part: str) -> tuple[date, date] | None:
     m = re.match(r"last_(\d+)d", part)
     if m:
         days = int(m.group(1))
-        return today - timedelta(days=days), today
+        return today - timedelta(days=days - 1), today
     m = re.match(r"previous_(\d+)d", part)
     if m:
         days = int(m.group(1))
-        return today - timedelta(days=days * 2), today - timedelta(days=days)
+        return today - timedelta(days=days * 2 - 1), today - timedelta(days=days)
     if re.match(r"^\d{4}-\d{2}$", part):
         year, month = int(part[:4]), int(part[5:7])
         start = date(year, month, 1)

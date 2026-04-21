@@ -166,13 +166,21 @@ class TestParseCompareRange:
         assert result is not None
         start, end = result
         assert end == date.today()
-        assert (end - start).days == 30
+        assert (end - start).days == 29
 
     def test_previous_nd(self):
         result = _parse_compare_range("previous_30d")
         assert result is not None
         start, end = result
-        assert (end - start).days == 30
+        assert (end - start).days == 29
+
+    def test_last_and_previous_nd_are_adjacent_non_overlapping(self):
+        last = _parse_compare_range("last_14d")
+        prev = _parse_compare_range("previous_14d")
+        assert last is not None and prev is not None
+        assert (last[1] - last[0]).days == 13
+        assert (prev[1] - prev[0]).days == 13
+        assert (last[0] - prev[1]).days == 1
 
     def test_month(self):
         result = _parse_compare_range("2026-03")
