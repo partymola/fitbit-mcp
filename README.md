@@ -1,5 +1,9 @@
 # fitbit-mcp
 
+[![CI](https://github.com/partymola/fitbit-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/partymola/fitbit-mcp/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+
 MCP server for the Fitbit Web API with OAuth PKCE, local SQLite cache, and trend analysis.
 
 Designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and other [MCP](https://modelcontextprotocol.io/) clients. Syncs your Fitbit data to a local database for fast, offline queries - no API calls needed after the initial sync.
@@ -180,6 +184,10 @@ fitbit-mcp import --data-dir /path/to/json/files/
 ```
 
 Expected file names: `heart_rate.json`, `activity.json`, `exercises.json`, `sleep.json`, `weight.json`, `spo2.json`, `hrv.json`. See `src/fitbit_mcp/importer.py` for the expected JSON format.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the test workflow, and the pre-commit hook. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
