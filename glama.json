@@ -1,0 +1,6 @@
+{
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": ["partymola"],
+  "name": "fitbit-mcp",
+  "description": "Provides access to Fitbit health and activity data including heart rate, steps, exercises, sleep, weight, SpO2, and HRV with local SQLite caching and trend analysis. Features OAuth 2.0 PKCE authentication, incremental synchronization, automatic token refresh, and per-data-type auto-sync on first daily query."
+}
