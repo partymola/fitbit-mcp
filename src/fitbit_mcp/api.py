@@ -3,6 +3,10 @@
 All Fitbit Web API endpoints use GET with Bearer token auth.
 Rate limit: 150 requests/hour. Headers: Fitbit-Rate-Limit-Remaining,
 Fitbit-Rate-Limit-Reset (seconds until reset).
+
+Accept-Language is intentionally not set: Fitbit returns metric units
+(kg, km, cm, C) by default. Setting `en_GB` returns weight in stones
+even though distance stays in km.
 """
 
 import json
@@ -49,7 +53,6 @@ def get(path: str, retries: int = 3) -> dict:
         req = urllib.request.Request(url, headers={
             "Authorization": f"Bearer {token}",
             "Accept": "application/json",
-            "Accept-Language": "en_GB",
         })
 
         try:

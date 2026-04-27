@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Weight values from `fitbit_get_weight` were returned in stones but labelled as `weight_kg`. The API client previously sent `Accept-Language: en_GB`, which causes the Fitbit Web API to return weight in stones (UK convention) while keeping distance in km. The header is now omitted, so all responses are full metric (kg, km). BMI was unaffected.
+- **Migration for existing users:** weight rows cached before this release stay in stones-mislabelled-as-kg form, because incremental sync resumes from the most recent stored date and will not re-fetch older rows. To rebuild the weight cache, purge and re-sync:
+
+  ```
+  sqlite3 ~/.local/share/fitbit-mcp/fitbit.db \
+      "DELETE FROM weight; DELETE FROM sync_log WHERE data_type='weight';"
+  fitbit-mcp sync --types weight --days N
+  ```
+
+  Pick `N` to cover the history you want back (default 30). Adjust the path if you set `FITBIT_MCP_DB_PATH`. Other data types are unaffected.
+
 ## [0.1.0] - 2026-04-26
 
 ### Added

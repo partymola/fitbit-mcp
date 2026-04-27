@@ -50,6 +50,9 @@ class TestAPIGet:
         req = mock_urlopen.call_args[0][0]
         assert req.full_url == "https://api.fitbit.com/1/user/-/test.json"
         assert req.get_header("Authorization") == "Bearer test_token"
+        # Accept-Language must not be en_GB: Fitbit returns weight in stones
+        # for that locale. Omitting the header gives full metric (kg, km).
+        assert req.get_header("Accept-language") is None
 
     @patch("fitbit_mcp.auth.invalidate_token_cache")
     @patch("fitbit_mcp.api.refresh_token")
