@@ -5,6 +5,9 @@ config/*
 *.db-journal
 *.db-wal
 *.db-shm
+*.db.*
+*.bak
+*.backup
 .env
 __pycache__/
 *.pyc
