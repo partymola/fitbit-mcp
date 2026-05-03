@@ -32,7 +32,7 @@ fitbit-mcp          # Start MCP server (stdio transport, used by Claude Code)
 
 | Tool | Source | Purpose |
 |------|--------|---------|
-| `fitbit_sync` | Live API -> SQLite | Incremental sync (heart_rate, activity, exercises, sleep, weight, spo2, hrv) |
+| `fitbit_sync` | Live API -> SQLite | Incremental sync (all 12 cached data types) |
 | `fitbit_get_heart_rate` | Cache (auto-sync) / Live | Resting HR, HR zones |
 | `fitbit_get_activity` | Cache (auto-sync) / Live | Steps, calories, active minutes, distance |
 | `fitbit_get_exercises` | Cache (auto-sync) / Live | Exercise sessions (name, duration, HR, calories) |
@@ -40,6 +40,14 @@ fitbit-mcp          # Start MCP server (stdio transport, used by Claude Code)
 | `fitbit_get_weight` | Cache (auto-sync) / Live | Weight, BMI, body fat % |
 | `fitbit_get_spo2` | Cache (auto-sync) / Live | Blood oxygen saturation (avg/min/max) |
 | `fitbit_get_hrv` | Cache (auto-sync) / Live | Heart rate variability (RMSSD) |
+| `fitbit_get_azm` | Cache (auto-sync) / Live | Active Zone Minutes with per-zone breakdown |
+| `fitbit_get_breathing_rate` | Cache (auto-sync) / Live | Nightly breaths per minute |
+| `fitbit_get_temperature` | Cache (auto-sync) / Live | Nightly skin temperature variation (degrees C) |
+| `fitbit_get_cardio_fitness` | Cache (auto-sync) / Live | VO2 Max / Cardio Fitness Score (range) |
+| `fitbit_get_food_log` | Cache (auto-sync) / Live | Daily food calories + water intake |
+| `fitbit_get_devices` | Live | Paired devices, battery level, last sync |
+| `fitbit_get_lifetime_stats` | Live | All-time totals and personal best records |
+| `fitbit_get_goals` | Live | User-set daily/weekly activity goals |
 | `fitbit_trends` | Cache (auto-sync) | Period averages, comparisons, min/max/delta |
 
 All `get_*` and `fitbit_trends` tools auto-sync on the first query of each day per data type. Use `live=True` to bypass the cache entirely.
@@ -50,7 +58,7 @@ All `get_*` and `fitbit_trends` tools auto-sync on the first query of each day p
 - **FastMCP**: `mcp_instance.py` creates the shared `FastMCP("fitbit-mcp")` instance
 - **Auth**: `auth.py` - PKCE OAuth setup, token refresh (8-hour access tokens, 90-day refresh tokens)
 - **API**: `api.py` - GET wrapper with auto-refresh, rate limit retry, typed exceptions
-- **DB**: `db.py` - SQLite schema (7 data tables + `sync_log`), save/query helpers
+- **DB**: `db.py` - SQLite schema (12 data tables + `sync_log`), save/query helpers
 - **Tools**: `tools/` - domain-grouped modules; `sync_tools.py` also exports `auto_sync_if_stale(data_type)`
 - **Config**: `config.py` - paths overridable via `FITBIT_MCP_CONFIG_DIR` and `FITBIT_MCP_DB_PATH`
 
@@ -65,6 +73,7 @@ All `get_*` and `fitbit_trends` tools auto-sync on the first query of each day p
 - Redirect URL: `http://localhost:8080`
 - Credentials stored in `~/.config/fitbit-mcp/fitbit_config.json` and `fitbit_tokens.json` (gitignored)
 - Access tokens expire in 8 hours (auto-refresh). Refresh tokens expire after 90 days of inactivity.
+- Scopes requested: `activity heartrate sleep weight oxygen_saturation profile respiratory_rate temperature cardio_fitness location nutrition settings`. After upgrading from a smaller scope set, re-run `fitbit-mcp auth` to grant the new scopes.
 
 ## Database
 
@@ -76,20 +85,25 @@ SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). Tables:
 - `weight` - date, weight_kg, bmi, fat_pct
 - `spo2` - date, avg, min, max
 - `hrv` - date, daily_rmssd, deep_rmssd
+- `azm` - date, total_minutes, fat_burn_minutes, cardio_minutes, peak_minutes
+- `breathing_rate` - date, breaths_per_min
+- `skin_temperature` - date, nightly_relative (degrees C from baseline), log_type
+- `cardio_fitness` - date, vo2_max_low, vo2_max_high (Fitbit reports as a range)
+- `food_log` - date, calories_in, water_ml
 - `sync_log` - sync history (used by auto-sync to decide when to re-fetch)
 
 ## Rate Limits
 
-Fitbit API: 150 requests/hour. Activity sync uses 1 call per day (no range endpoint) - a 30-day initial sync uses ~30 quota. Other data types use range endpoints and are much more efficient. Rate limit errors are auto-retried.
+Fitbit API: 150 requests/hour. Activity and food_log sync use 1 call per day (no range endpoint) - a 30-day initial sync of either uses ~30 quota each. Other data types use range endpoints and are much more efficient. Rate limit errors are auto-retried.
 
 ## Running Tests
 
 ```bash
 cd fitbit-mcp
-.venv/bin/python -m pytest tests/ -v   # 187 tests
+.venv/bin/python -m pytest tests/ -v   # 221 tests
 ```
 
-All tests use tmp SQLite and fictional data. Auto-sync is triggered in tests but fails silently (no real credentials).
+All tests use tmp SQLite and fictional data. Auto-sync is triggered in tests but fails silently (no real credentials). On a developer machine that has live credentials at `~/.config/fitbit-mcp/`, point `FITBIT_MCP_CONFIG_DIR` at an empty directory before running tests so auto-sync skips the network round-trip.
 
 ## Troubleshooting
 

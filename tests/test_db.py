@@ -22,6 +22,11 @@ class TestSchema:
         assert "weight" in names
         assert "spo2" in names
         assert "hrv" in names
+        assert "azm" in names
+        assert "breathing_rate" in names
+        assert "skin_temperature" in names
+        assert "cardio_fitness" in names
+        assert "food_log" in names
         assert "sync_log" in names
 
     def test_exercises_date_index(self, tmp_db):
@@ -150,6 +155,52 @@ class TestSaveAndQuery:
         assert len(rows) == 1
         assert rows[0]["daily_rmssd"] == 38.5
 
+    def test_azm_save_query(self, tmp_db):
+        db.save_azm(tmp_db, {
+            "date": "2026-03-15", "total_minutes": 42,
+            "fat_burn_minutes": 25, "cardio_minutes": 12, "peak_minutes": 5,
+        })
+        tmp_db.commit()
+        rows = db.query_azm(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
+        assert rows[0]["total_minutes"] == 42
+        assert rows[0]["peak_minutes"] == 5
+
+    def test_breathing_rate_save_query(self, tmp_db):
+        db.save_breathing_rate(tmp_db, {"date": "2026-03-15", "breaths_per_min": 14.2})
+        tmp_db.commit()
+        rows = db.query_breathing_rate(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
+        assert rows[0]["breaths_per_min"] == 14.2
+
+    def test_skin_temperature_save_query(self, tmp_db):
+        db.save_skin_temperature(tmp_db, {
+            "date": "2026-03-15", "nightly_relative": -0.3, "log_type": "dermal",
+        })
+        tmp_db.commit()
+        rows = db.query_skin_temperature(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
+        assert rows[0]["nightly_relative"] == -0.3
+        assert rows[0]["log_type"] == "dermal"
+
+    def test_cardio_fitness_save_query(self, tmp_db):
+        db.save_cardio_fitness(tmp_db, {
+            "date": "2026-03-15", "vo2_max_low": 38.0, "vo2_max_high": 42.0,
+        })
+        tmp_db.commit()
+        rows = db.query_cardio_fitness(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
+        assert rows[0]["vo2_max_low"] == 38.0
+        assert rows[0]["vo2_max_high"] == 42.0
+
+    def test_food_log_save_query(self, tmp_db):
+        db.save_food_log(tmp_db, {"date": "2026-03-15", "calories_in": 2100, "water_ml": 1800.0})
+        tmp_db.commit()
+        rows = db.query_food_log(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
+        assert rows[0]["calories_in"] == 2100
+        assert rows[0]["water_ml"] == 1800.0
+
 
 class TestUpsert:
     """Test that INSERT OR REPLACE works correctly."""
@@ -240,3 +291,20 @@ class TestSyncLog:
     def test_get_last_synced_date_unknown_type(self, tmp_db):
         last = db.get_last_synced_date(tmp_db, "unknown_type")
         assert last is None
+
+    def test_get_last_attempted_date_empty(self, tmp_db):
+        assert db.get_last_attempted_date(tmp_db, "food_log") is None
+
+    def test_get_last_attempted_date_returns_latest_per_type(self, tmp_db):
+        db.log_sync(tmp_db, "food_log", "ok", 0, last_date_attempted="2026-04-15")
+        db.log_sync(tmp_db, "food_log", "ok", 0, last_date_attempted="2026-04-20")
+        db.log_sync(tmp_db, "hrv", "ok", 5, last_date_attempted="2026-04-25")
+        # Errors should be ignored
+        db.log_sync(tmp_db, "food_log", "error", 0, last_date_attempted="2026-04-30")
+        assert db.get_last_attempted_date(tmp_db, "food_log") == "2026-04-20"
+        assert db.get_last_attempted_date(tmp_db, "hrv") == "2026-04-25"
+
+    def test_get_last_attempted_date_ignores_null(self, tmp_db):
+        # Old-style log entries (pre-migration) have no attempted date
+        db.log_sync(tmp_db, "food_log", "ok", 0)
+        assert db.get_last_attempted_date(tmp_db, "food_log") is None

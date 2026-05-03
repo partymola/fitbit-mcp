@@ -21,7 +21,10 @@ FITBIT_AUTH_URL = "https://www.fitbit.com/oauth2/authorize"
 FITBIT_TOKEN_URL = f"{FITBIT_API_BASE}/oauth2/token"
 
 # OAuth
-FITBIT_SCOPES = "activity heartrate sleep weight oxygen_saturation profile"
+FITBIT_SCOPES = (
+    "activity heartrate sleep weight oxygen_saturation profile "
+    "respiratory_rate temperature cardio_fitness location nutrition settings"
+)
 FITBIT_CALLBACK_PORT = 8080
 FITBIT_REDIRECT_URI = f"http://localhost:{FITBIT_CALLBACK_PORT}"
 
@@ -34,3 +37,7 @@ SLEEP_MAX_RANGE_DAYS = 100
 WEIGHT_MAX_RANGE_DAYS = 31
 SPO2_MAX_RANGE_DAYS = 30
 HRV_MAX_RANGE_DAYS = 30
+AZM_MAX_RANGE_DAYS = 1095
+BREATHING_RATE_MAX_RANGE_DAYS = 30
+SKIN_TEMPERATURE_MAX_RANGE_DAYS = 30
+CARDIO_FITNESS_MAX_RANGE_DAYS = 30

@@ -76,15 +76,55 @@ CREATE TABLE IF NOT EXISTS hrv (
     deep_rmssd REAL
 );
 
+CREATE TABLE IF NOT EXISTS azm (
+    date TEXT PRIMARY KEY,
+    total_minutes INTEGER,
+    fat_burn_minutes INTEGER,
+    cardio_minutes INTEGER,
+    peak_minutes INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS breathing_rate (
+    date TEXT PRIMARY KEY,
+    breaths_per_min REAL
+);
+
+CREATE TABLE IF NOT EXISTS skin_temperature (
+    date TEXT PRIMARY KEY,
+    nightly_relative REAL,
+    log_type TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cardio_fitness (
+    date TEXT PRIMARY KEY,
+    vo2_max_low REAL,
+    vo2_max_high REAL
+);
+
+CREATE TABLE IF NOT EXISTS food_log (
+    date TEXT PRIMARY KEY,
+    calories_in INTEGER,
+    water_ml REAL
+);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     synced_at TEXT NOT NULL,
     data_type TEXT NOT NULL,
     status TEXT NOT NULL,
     records_added INTEGER,
-    notes TEXT
+    notes TEXT,
+    last_date_attempted TEXT
 );
 """
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply additive schema migrations to older DBs. Idempotent."""
+    existing = {r["name"] for r in conn.execute("PRAGMA table_info(sync_log)").fetchall()}
+    if "last_date_attempted" not in existing:
+        conn.execute("ALTER TABLE sync_log ADD COLUMN last_date_attempted TEXT")
+        conn.commit()
 
 
 def get_db(db_path: Path | str | None = None) -> sqlite3.Connection:
@@ -94,6 +134,7 @@ def get_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -162,12 +203,54 @@ def save_hrv(conn: sqlite3.Connection, row: dict):
     )
 
 
-def log_sync(conn: sqlite3.Connection, data_type: str, status: str,
-             records_added: int = 0, notes: str = ""):
+def save_azm(conn: sqlite3.Connection, row: dict):
     conn.execute(
-        """INSERT INTO sync_log (synced_at, data_type, status, records_added, notes)
-        VALUES (?, ?, ?, ?, ?)""",
-        (datetime.now(timezone.utc).isoformat(), data_type, status, records_added, notes),
+        """INSERT OR REPLACE INTO azm
+        (date, total_minutes, fat_burn_minutes, cardio_minutes, peak_minutes)
+        VALUES (:date, :total_minutes, :fat_burn_minutes, :cardio_minutes, :peak_minutes)""",
+        row,
+    )
+
+
+def save_breathing_rate(conn: sqlite3.Connection, row: dict):
+    conn.execute(
+        "INSERT OR REPLACE INTO breathing_rate (date, breaths_per_min) VALUES (:date, :breaths_per_min)",
+        row,
+    )
+
+
+def save_skin_temperature(conn: sqlite3.Connection, row: dict):
+    conn.execute(
+        """INSERT OR REPLACE INTO skin_temperature (date, nightly_relative, log_type)
+        VALUES (:date, :nightly_relative, :log_type)""",
+        row,
+    )
+
+
+def save_cardio_fitness(conn: sqlite3.Connection, row: dict):
+    conn.execute(
+        """INSERT OR REPLACE INTO cardio_fitness (date, vo2_max_low, vo2_max_high)
+        VALUES (:date, :vo2_max_low, :vo2_max_high)""",
+        row,
+    )
+
+
+def save_food_log(conn: sqlite3.Connection, row: dict):
+    conn.execute(
+        "INSERT OR REPLACE INTO food_log (date, calories_in, water_ml) VALUES (:date, :calories_in, :water_ml)",
+        row,
+    )
+
+
+def log_sync(conn: sqlite3.Connection, data_type: str, status: str,
+             records_added: int = 0, notes: str = "",
+             last_date_attempted: str | None = None):
+    conn.execute(
+        """INSERT INTO sync_log
+            (synced_at, data_type, status, records_added, notes, last_date_attempted)
+        VALUES (?, ?, ?, ?, ?, ?)""",
+        (datetime.now(timezone.utc).isoformat(), data_type, status, records_added,
+         notes, last_date_attempted),
     )
     conn.commit()
 
@@ -182,6 +265,11 @@ _DATA_TABLE_MAP: dict[str, str] = {
     "weight": "weight",
     "spo2": "spo2",
     "hrv": "hrv",
+    "azm": "azm",
+    "breathing_rate": "breathing_rate",
+    "skin_temperature": "skin_temperature",
+    "cardio_fitness": "cardio_fitness",
+    "food_log": "food_log",
 }
 
 
@@ -204,6 +292,23 @@ def get_last_synced_date(conn: sqlite3.Connection, data_type: str) -> str | None
     # table is from the hardcoded allowlist above - safe to interpolate
     row = conn.execute(f"SELECT MAX(date) AS d FROM {table}").fetchone()
     return row["d"] if row else None
+
+
+def get_last_attempted_date(conn: sqlite3.Connection, data_type: str) -> str | None:
+    """Return the most recent end-date a successful sync attempted to reach.
+
+    Distinct from `get_last_synced_date`, which only sees days that produced
+    a row. For sparse-data types (e.g. food_log, skin_temperature) where
+    many days legitimately produce no data, the attempted-date is what we
+    really want to advance forward on the next sync, otherwise we'd re-query
+    every empty day forever.
+    """
+    row = conn.execute(
+        "SELECT MAX(last_date_attempted) AS d FROM sync_log "
+        "WHERE data_type = ? AND status = 'ok'",
+        (data_type,),
+    ).fetchone()
+    return row["d"] if row and row["d"] else None
 
 
 # --- Query helpers ---
@@ -280,6 +385,46 @@ def query_spo2(conn: sqlite3.Connection, start_date: str, end_date: str) -> list
 def query_hrv(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[dict]:
     rows = conn.execute(
         "SELECT * FROM hrv WHERE date >= ? AND date <= ? ORDER BY date",
+        (start_date, end_date),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def query_azm(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM azm WHERE date >= ? AND date <= ? ORDER BY date",
+        (start_date, end_date),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def query_breathing_rate(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM breathing_rate WHERE date >= ? AND date <= ? ORDER BY date",
+        (start_date, end_date),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def query_skin_temperature(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM skin_temperature WHERE date >= ? AND date <= ? ORDER BY date",
+        (start_date, end_date),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def query_cardio_fitness(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM cardio_fitness WHERE date >= ? AND date <= ? ORDER BY date",
+        (start_date, end_date),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def query_food_log(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM food_log WHERE date >= ? AND date <= ? ORDER BY date",
         (start_date, end_date),
     ).fetchall()
     return _rows_to_dicts(rows)

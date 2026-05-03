@@ -17,6 +17,13 @@ from fitbit_mcp.tools.exercise_tools import _fetch_live as exercise_fetch_live
 from fitbit_mcp.tools.weight_tools import _fetch_live as weight_fetch_live
 from fitbit_mcp.tools.spo2_tools import _fetch_live as spo2_fetch_live
 from fitbit_mcp.tools.hrv_tools import _fetch_live as hrv_fetch_live
+from fitbit_mcp.tools.azm_tools import _fetch_live as azm_fetch_live
+from fitbit_mcp.tools.breathing_rate_tools import _fetch_live as breathing_rate_fetch_live
+from fitbit_mcp.tools.temperature_tools import _fetch_live as temperature_fetch_live
+from fitbit_mcp.tools.cardio_fitness_tools import _fetch_live as cardio_fitness_fetch_live
+from fitbit_mcp.tools.food_tools import _fetch_live as food_fetch_live
+from fitbit_mcp.tools.devices_tools import _fetch_devices
+from fitbit_mcp.tools.lifetime_stats_tools import _fetch_lifetime, _fetch_goals
 
 
 class TestHeartFetchLive:
@@ -337,3 +344,163 @@ class TestHrvFetchLive:
         }
         result = hrv_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
         assert len(result) == 1
+
+
+class TestAzmFetchLive:
+    @patch("fitbit_mcp.tools.azm_tools.api.get")
+    def test_returns_entries(self, mock_get):
+        mock_get.return_value = {
+            "activities-active-zone-minutes": [
+                {"dateTime": "2026-03-15", "value": {
+                    "activeZoneMinutes": 42, "fatBurnActiveZoneMinutes": 25,
+                    "cardioActiveZoneMinutes": 12, "peakActiveZoneMinutes": 5,
+                }},
+            ]
+        }
+        result = azm_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert len(result) == 1
+        assert result[0]["total_minutes"] == 42
+        assert result[0]["peak_minutes"] == 5
+
+    @patch("fitbit_mcp.tools.azm_tools.api.get")
+    def test_correct_url(self, mock_get):
+        mock_get.return_value = {"activities-active-zone-minutes": []}
+        azm_fetch_live(date(2026, 3, 1), date(2026, 3, 5))
+        url = mock_get.call_args[0][0]
+        assert "/activities/active-zone-minutes/date/2026-03-01/2026-03-05.json" in url
+
+
+class TestBreathingRateFetchLive:
+    @patch("fitbit_mcp.tools.breathing_rate_tools.api.get")
+    def test_returns_entries(self, mock_get):
+        mock_get.return_value = {
+            "br": [{"dateTime": "2026-03-15", "value": {"breathingRate": 14.5}}]
+        }
+        result = breathing_rate_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert len(result) == 1
+        assert result[0]["breaths_per_min"] == 14.5
+
+    @patch("fitbit_mcp.tools.breathing_rate_tools.api.get")
+    def test_skips_missing(self, mock_get):
+        mock_get.return_value = {"br": [{"dateTime": "2026-03-15", "value": {}}]}
+        result = breathing_rate_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert result == []
+
+
+class TestTemperatureFetchLive:
+    @patch("fitbit_mcp.tools.temperature_tools.api.get")
+    def test_returns_entries(self, mock_get):
+        mock_get.return_value = {
+            "tempSkin": [
+                {"dateTime": "2026-03-15", "value": {"nightlyRelative": -0.4}, "logType": "dermal"},
+            ]
+        }
+        result = temperature_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert len(result) == 1
+        assert result[0]["nightly_relative"] == -0.4
+        assert result[0]["log_type"] == "dermal"
+
+
+class TestCardioFitnessFetchLive:
+    @patch("fitbit_mcp.tools.cardio_fitness_tools.api.get")
+    def test_returns_range(self, mock_get):
+        mock_get.return_value = {
+            "cardioScore": [{"dateTime": "2026-03-15", "value": {"vo2Max": "39-43"}}]
+        }
+        result = cardio_fitness_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert len(result) == 1
+        assert result[0]["vo2_max_low"] == 39.0
+        assert result[0]["vo2_max_high"] == 43.0
+
+    @patch("fitbit_mcp.tools.cardio_fitness_tools.api.get")
+    def test_returns_single_value(self, mock_get):
+        mock_get.return_value = {
+            "cardioScore": [{"dateTime": "2026-03-15", "value": {"vo2Max": 41}}]
+        }
+        result = cardio_fitness_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert result[0]["vo2_max_low"] == 41.0
+        assert result[0]["vo2_max_high"] == 41.0
+
+
+class TestFoodFetchLive:
+    @patch("fitbit_mcp.tools.food_tools.api.get")
+    def test_returns_entries(self, mock_get):
+        mock_get.return_value = {
+            "foods": [{"logId": 1}],
+            "summary": {"calories": 2100, "water": 1800},
+        }
+        result = food_fetch_live(date(2026, 3, 15), date(2026, 3, 16))
+        assert len(result) == 2
+        assert result[0]["calories_in"] == 2100
+        assert result[0]["water_ml"] == 1800
+
+    @patch("fitbit_mcp.tools.food_tools.api.get")
+    def test_skips_empty_days(self, mock_get):
+        mock_get.return_value = {"summary": {}}
+        result = food_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert result == []
+
+    @patch("fitbit_mcp.tools.food_tools.api.get")
+    def test_skips_zero_unlogged_days(self, mock_get):
+        """Unlogged days return calories=0, water=0 - must not be returned."""
+        mock_get.return_value = {"foods": [], "summary": {"calories": 0, "water": 0}}
+        result = food_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert result == []
+
+
+class TestDevicesFetch:
+    @patch("fitbit_mcp.tools.devices_tools.api.get")
+    def test_returns_devices(self, mock_get):
+        mock_get.return_value = [
+            {
+                "id": "abc123", "type": "TRACKER", "deviceVersion": "Charge 6",
+                "battery": "High", "batteryLevel": 88, "lastSyncTime": "2026-05-03T07:00:00",
+                "mac": "AA:BB:CC:DD:EE:FF", "features": [],
+            }
+        ]
+        result = _fetch_devices()
+        assert len(result) == 1
+        assert result[0]["device_version"] == "Charge 6"
+        assert result[0]["battery_level"] == 88
+
+    @patch("fitbit_mcp.tools.devices_tools.api.get")
+    def test_handles_non_list(self, mock_get):
+        mock_get.return_value = {}
+        result = _fetch_devices()
+        assert result == []
+
+
+class TestLifetimeStatsFetch:
+    @patch("fitbit_mcp.tools.lifetime_stats_tools.api.get")
+    def test_returns_lifetime(self, mock_get):
+        mock_get.return_value = {
+            "lifetime": {
+                "total": {"steps": 12345678, "distance": 9876.5, "floors": 1500, "caloriesOut": 0, "activeScore": -1},
+                "tracker": {"steps": 12345678, "distance": 9876.5, "floors": 1500, "caloriesOut": 0, "activeScore": -1},
+            },
+            "best": {
+                "total": {"steps": {"date": "2026-03-15", "value": 25000}},
+                "tracker": {"steps": {"date": "2026-03-15", "value": 25000}},
+            },
+        }
+        result = _fetch_lifetime()
+        assert result["lifetime_total"]["steps"] == 12345678
+        assert result["best_total"]["steps"]["value"] == 25000
+
+
+class TestGoalsFetch:
+    @patch("fitbit_mcp.tools.lifetime_stats_tools.api.get")
+    def test_returns_goals(self, mock_get):
+        mock_get.return_value = {
+            "goals": {"steps": 10000, "distance": 8.0, "floors": 10, "caloriesOut": 2500, "activeMinutes": 30}
+        }
+        result = _fetch_goals("daily")
+        assert result["steps"] == 10000
+        assert result["activeMinutes"] == 30
+
+    @patch("fitbit_mcp.tools.lifetime_stats_tools.api.get")
+    def test_correct_url(self, mock_get):
+        mock_get.return_value = {"goals": {}}
+        _fetch_goals("weekly")
+        url = mock_get.call_args[0][0]
+        assert "/activities/goals/weekly.json" in url

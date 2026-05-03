@@ -216,6 +216,137 @@ def _trend_hrv(conn, start_date: str, end_date: str, period: str) -> dict:
     return {"periods": periods, "data_type": "hrv", "aggregation": period}
 
 
+def _trend_azm(conn, start_date: str, end_date: str, period: str) -> dict:
+    rows = db.query_azm(conn, start_date, end_date)
+    if not rows:
+        return {"message": "No AZM data in cache. No data recorded for this period."}
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        key = _get_period_key(r["date"], period)
+        for f in ["total_minutes", "fat_burn_minutes", "cardio_minutes", "peak_minutes"]:
+            v = r.get(f)
+            if v is not None:
+                buckets[key][f].append(v)
+
+    periods = []
+    for key in sorted(buckets.keys()):
+        b = buckets[key]
+        total = b.get("total_minutes", [])
+        periods.append({
+            "period": key,
+            "days": len(total),
+            "avg_total_azm": _avg(total),
+            "total_azm": sum(total) if total else None,
+            "avg_fat_burn_minutes": _avg(b.get("fat_burn_minutes", [])),
+            "avg_cardio_minutes": _avg(b.get("cardio_minutes", [])),
+            "avg_peak_minutes": _avg(b.get("peak_minutes", [])),
+        })
+    return {"periods": periods, "data_type": "azm", "aggregation": period}
+
+
+def _trend_breathing_rate(conn, start_date: str, end_date: str, period: str) -> dict:
+    rows = db.query_breathing_rate(conn, start_date, end_date)
+    if not rows:
+        return {"message": "No breathing rate data in cache. No data recorded for this period."}
+
+    buckets = defaultdict(list)
+    for r in rows:
+        v = r.get("breaths_per_min")
+        if v is not None:
+            buckets[_get_period_key(r["date"], period)].append(v)
+
+    periods = []
+    for key in sorted(buckets.keys()):
+        vals = buckets[key]
+        periods.append({
+            "period": key,
+            "nights": len(vals),
+            "avg_breaths_per_min": _avg(vals),
+            "min_breaths_per_min": min(vals) if vals else None,
+            "max_breaths_per_min": max(vals) if vals else None,
+        })
+    return {"periods": periods, "data_type": "breathing_rate", "aggregation": period}
+
+
+def _trend_skin_temperature(conn, start_date: str, end_date: str, period: str) -> dict:
+    rows = db.query_skin_temperature(conn, start_date, end_date)
+    if not rows:
+        return {"message": "No skin temperature data in cache. No data recorded for this period."}
+
+    buckets = defaultdict(list)
+    for r in rows:
+        v = r.get("nightly_relative")
+        if v is not None:
+            buckets[_get_period_key(r["date"], period)].append(v)
+
+    periods = []
+    for key in sorted(buckets.keys()):
+        vals = buckets[key]
+        periods.append({
+            "period": key,
+            "nights": len(vals),
+            "avg_nightly_relative": _avg(vals),
+            "min_nightly_relative": min(vals) if vals else None,
+            "max_nightly_relative": max(vals) if vals else None,
+        })
+    return {"periods": periods, "data_type": "skin_temperature", "aggregation": period}
+
+
+def _trend_cardio_fitness(conn, start_date: str, end_date: str, period: str) -> dict:
+    rows = db.query_cardio_fitness(conn, start_date, end_date)
+    if not rows:
+        return {"message": "No cardio fitness data in cache. No data recorded for this period."}
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        key = _get_period_key(r["date"], period)
+        for f in ["vo2_max_low", "vo2_max_high"]:
+            v = r.get(f)
+            if v is not None:
+                buckets[key][f].append(v)
+
+    periods = []
+    for key in sorted(buckets.keys()):
+        b = buckets[key]
+        lows = b.get("vo2_max_low", [])
+        highs = b.get("vo2_max_high", [])
+        periods.append({
+            "period": key,
+            "readings": len(lows),
+            "avg_vo2_max_low": _avg(lows),
+            "avg_vo2_max_high": _avg(highs),
+        })
+    return {"periods": periods, "data_type": "cardio_fitness", "aggregation": period}
+
+
+def _trend_food_log(conn, start_date: str, end_date: str, period: str) -> dict:
+    rows = db.query_food_log(conn, start_date, end_date)
+    if not rows:
+        return {"message": "No food log data in cache. No data recorded for this period."}
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        key = _get_period_key(r["date"], period)
+        for f in ["calories_in", "water_ml"]:
+            v = r.get(f)
+            if v is not None:
+                buckets[key][f].append(v)
+
+    periods = []
+    for key in sorted(buckets.keys()):
+        b = buckets[key]
+        cals = b.get("calories_in", [])
+        water = b.get("water_ml", [])
+        periods.append({
+            "period": key,
+            "days_logged": len(cals) or len(water),
+            "avg_calories_in": _avg(cals),
+            "avg_water_ml": _avg(water),
+        })
+    return {"periods": periods, "data_type": "food_log", "aggregation": period}
+
+
 def _parse_compare_range(part: str) -> tuple[date, date] | None:
     today = date.today()
     m = re.match(r"last_(\d+)d", part)
@@ -261,10 +392,15 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
         "weight": db.query_weight,
         "spo2": db.query_spo2,
         "hrv": db.query_hrv,
+        "azm": db.query_azm,
+        "breathing_rate": db.query_breathing_rate,
+        "skin_temperature": db.query_skin_temperature,
+        "cardio_fitness": db.query_cardio_fitness,
+        "food_log": db.query_food_log,
     }
     query_fn = query_fns.get(data_type)
     if not query_fn:
-        return {"error": f"Cannot compare data_type '{data_type}'. Use: heart_rate, activity, exercises, sleep, weight, spo2, or hrv."}
+        return {"error": f"Cannot compare data_type '{data_type}'. Use: heart_rate, activity, exercises, sleep, weight, spo2, hrv, azm, breathing_rate, skin_temperature, cardio_fitness, or food_log."}
 
     def summarize(rows, dtype):
         if not rows:
@@ -290,6 +426,22 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
         elif dtype == "hrv":
             rmssd = [r["daily_rmssd"] for r in rows if r.get("daily_rmssd")]
             return {"count": len(rows), "avg_daily_rmssd": _avg(rmssd)}
+        elif dtype == "azm":
+            azm = [r["total_minutes"] for r in rows if r.get("total_minutes") is not None]
+            return {"count": len(rows), "avg_total_azm": _avg(azm), "total_azm": sum(azm) if azm else None}
+        elif dtype == "breathing_rate":
+            br = [r["breaths_per_min"] for r in rows if r.get("breaths_per_min") is not None]
+            return {"count": len(rows), "avg_breaths_per_min": _avg(br)}
+        elif dtype == "skin_temperature":
+            t = [r["nightly_relative"] for r in rows if r.get("nightly_relative") is not None]
+            return {"count": len(rows), "avg_nightly_relative": _avg(t)}
+        elif dtype == "cardio_fitness":
+            lo = [r["vo2_max_low"] for r in rows if r.get("vo2_max_low") is not None]
+            hi = [r["vo2_max_high"] for r in rows if r.get("vo2_max_high") is not None]
+            return {"count": len(rows), "avg_vo2_max_low": _avg(lo), "avg_vo2_max_high": _avg(hi)}
+        elif dtype == "food_log":
+            cals = [r["calories_in"] for r in rows if r.get("calories_in") is not None]
+            return {"count": len(rows), "avg_calories_in": _avg(cals)}
         return {"count": len(rows)}
 
     period_a = query_fn(conn, ranges[0][0].isoformat(), ranges[0][1].isoformat())
@@ -317,7 +469,9 @@ async def fitbit_trends(
 
     Args:
         data_type: What to analyse. Options: "heart_rate", "activity",
-            "exercises", "sleep", "weight", "spo2", "hrv". Default: "activity".
+            "exercises", "sleep", "weight", "spo2", "hrv", "azm",
+            "breathing_rate", "skin_temperature", "cardio_fitness", "food_log".
+            Default: "activity".
         period: Aggregation period. Options: "weekly", "monthly",
             "quarterly". Default: "monthly".
         start_date: Start date as "YYYY-MM-DD" or "365d". Default: last 12 months.
@@ -351,12 +505,17 @@ async def fitbit_trends(
                 "weight": _trend_weight,
                 "spo2": _trend_spo2,
                 "hrv": _trend_hrv,
+                "azm": _trend_azm,
+                "breathing_rate": _trend_breathing_rate,
+                "skin_temperature": _trend_skin_temperature,
+                "cardio_fitness": _trend_cardio_fitness,
+                "food_log": _trend_food_log,
             }
             fn = trend_fns.get(data_type)
             if fn:
                 result = fn(conn, s, e, period)
             else:
-                result = {"error": f"Unknown data_type '{data_type}'. Use: heart_rate, activity, exercises, sleep, weight, spo2, or hrv."}
+                result = {"error": f"Unknown data_type '{data_type}'. Use: heart_rate, activity, exercises, sleep, weight, spo2, hrv, azm, breathing_rate, skin_temperature, cardio_fitness, or food_log."}
 
         conn.close()
         return result

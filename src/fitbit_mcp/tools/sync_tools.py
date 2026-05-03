@@ -12,6 +12,8 @@ from .. import api, db
 from ..config import (
     MAX_RANGE_DAYS, SLEEP_MAX_RANGE_DAYS,
     WEIGHT_MAX_RANGE_DAYS, SPO2_MAX_RANGE_DAYS, HRV_MAX_RANGE_DAYS,
+    AZM_MAX_RANGE_DAYS, BREATHING_RATE_MAX_RANGE_DAYS,
+    SKIN_TEMPERATURE_MAX_RANGE_DAYS, CARDIO_FITNESS_MAX_RANGE_DAYS,
 )
 
 logger = logging.getLogger(__name__)
@@ -222,6 +224,159 @@ def _sync_hrv(conn, start_date: date, end_date: date) -> int:
     return count
 
 
+def _sync_azm(conn, start_date: date, end_date: date) -> int:
+    """Sync daily Active Zone Minutes (zone breakdown)."""
+    count = 0
+    for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, AZM_MAX_RANGE_DAYS):
+        path = f"/1/user/-/activities/active-zone-minutes/date/{chunk_start}/{chunk_end}.json"
+        data = api.get(path)
+        for entry in data.get("activities-active-zone-minutes", []):
+            ds = entry.get("dateTime")
+            value = entry.get("value", {}) or {}
+            if not ds:
+                continue
+            db.save_azm(conn, {
+                "date": ds,
+                "total_minutes": value.get("activeZoneMinutes"),
+                "fat_burn_minutes": value.get("fatBurnActiveZoneMinutes"),
+                "cardio_minutes": value.get("cardioActiveZoneMinutes"),
+                "peak_minutes": value.get("peakActiveZoneMinutes"),
+            })
+            count += 1
+        conn.commit()
+    return count
+
+
+def _sync_breathing_rate(conn, start_date: date, end_date: date) -> int:
+    """Sync nightly breathing rate (avg breaths per minute)."""
+    count = 0
+    for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, BREATHING_RATE_MAX_RANGE_DAYS):
+        path = f"/1/user/-/br/date/{chunk_start}/{chunk_end}.json"
+        data = api.get(path)
+        for entry in data.get("br", []):
+            ds = entry.get("dateTime")
+            value = entry.get("value", {}) or {}
+            if not ds:
+                continue
+            br = value.get("breathingRate")
+            if br is None:
+                continue
+            db.save_breathing_rate(conn, {"date": ds, "breaths_per_min": br})
+            count += 1
+        conn.commit()
+    return count
+
+
+def _sync_skin_temperature(conn, start_date: date, end_date: date) -> int:
+    """Sync nightly skin temperature variation from baseline."""
+    count = 0
+    for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, SKIN_TEMPERATURE_MAX_RANGE_DAYS):
+        path = f"/1/user/-/temp/skin/date/{chunk_start}/{chunk_end}.json"
+        data = api.get(path)
+        for entry in data.get("tempSkin", []):
+            ds = entry.get("dateTime")
+            value = entry.get("value", {}) or {}
+            if not ds:
+                continue
+            db.save_skin_temperature(conn, {
+                "date": ds,
+                "nightly_relative": value.get("nightlyRelative"),
+                "log_type": entry.get("logType"),
+            })
+            count += 1
+        conn.commit()
+    return count
+
+
+def _parse_vo2_max(raw) -> tuple[float | None, float | None]:
+    """Parse Fitbit's vo2Max field. May be a number or a range string like '39-43'."""
+    if raw is None:
+        return None, None
+    if isinstance(raw, (int, float)):
+        return float(raw), float(raw)
+    s = str(raw).strip()
+    if "-" in s:
+        try:
+            lo, hi = s.split("-", 1)
+            return float(lo), float(hi)
+        except ValueError:
+            return None, None
+    try:
+        v = float(s)
+        return v, v
+    except ValueError:
+        return None, None
+
+
+def _sync_cardio_fitness(conn, start_date: date, end_date: date) -> int:
+    """Sync VO2 Max / Cardio Fitness Score."""
+    count = 0
+    for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, CARDIO_FITNESS_MAX_RANGE_DAYS):
+        path = f"/1/user/-/cardioscore/date/{chunk_start}/{chunk_end}.json"
+        data = api.get(path)
+        for entry in data.get("cardioScore", []):
+            ds = entry.get("dateTime")
+            value = entry.get("value", {}) or {}
+            if not ds:
+                continue
+            lo, hi = _parse_vo2_max(value.get("vo2Max"))
+            if lo is None and hi is None:
+                continue
+            db.save_cardio_fitness(conn, {
+                "date": ds,
+                "vo2_max_low": lo,
+                "vo2_max_high": hi,
+            })
+            count += 1
+        conn.commit()
+    return count
+
+
+def _has_food_log(data: dict) -> bool:
+    """Decide whether a /foods/log/date/{d}.json response represents real activity.
+
+    Fitbit returns `summary.calories=0` and `summary.water=0` for days with no
+    log, so plain None-checks would store empty rows for every synced day. Only
+    treat the day as logged if there's at least one food entry or a non-zero
+    water/calorie figure.
+    """
+    foods = data.get("foods") or []
+    if foods:
+        return True
+    summary = data.get("summary", {}) or {}
+    return bool(summary.get("calories")) or bool(summary.get("water"))
+
+
+def _sync_food_log(conn, start_date: date, end_date: date) -> int:
+    """Sync daily food/water summary. One API call per day (no range endpoint).
+
+    Skips days with no log entries to avoid filling the cache with 0/0 rows.
+    """
+    count = 0
+    d = start_date
+    while d <= end_date:
+        path = f"/1/user/-/foods/log/date/{d}.json"
+        try:
+            data = api.get(path)
+        except api.FitbitRateLimitError as e:
+            logger.warning("Rate limited during food sync, sleeping %ds", e.reset_seconds)
+            time.sleep(e.reset_seconds + 5)
+            data = api.get(path)
+        if not _has_food_log(data):
+            d += timedelta(days=1)
+            continue
+        summary = data.get("summary", {}) or {}
+        db.save_food_log(conn, {
+            "date": d.isoformat(),
+            "calories_in": summary.get("calories"),
+            "water_ml": summary.get("water"),
+        })
+        count += 1
+        d += timedelta(days=1)
+    conn.commit()
+    return count
+
+
 def run_sync(data_types: list[str], days: int = 30) -> dict:
     """Run sync outside MCP context (for CLI use). Returns results dict."""
     today = date.today()
@@ -230,9 +385,19 @@ def run_sync(data_types: list[str], days: int = 30) -> dict:
 
     for dtype in data_types:
         try:
-            last_date = db.get_last_synced_date(conn, dtype)
-            if last_date:
-                start_date = date.fromisoformat(last_date)
+            # Use the later of (most-recent row in table) and (most-recent
+            # successful sync's end-date). The second matters for sparse
+            # types like food_log: if the user stops logging, the data
+            # table's MAX(date) freezes and we'd otherwise re-query every
+            # day from then on, burning quota on confirmed-empty days.
+            candidates = [
+                d for d in (
+                    db.get_last_synced_date(conn, dtype),
+                    db.get_last_attempted_date(conn, dtype),
+                ) if d
+            ]
+            if candidates:
+                start_date = date.fromisoformat(max(candidates))
             else:
                 start_date = today - timedelta(days=days)
             end_date = today
@@ -251,11 +416,21 @@ def run_sync(data_types: list[str], days: int = 30) -> dict:
                 count = _sync_spo2(conn, start_date, end_date)
             elif dtype == "hrv":
                 count = _sync_hrv(conn, start_date, end_date)
+            elif dtype == "azm":
+                count = _sync_azm(conn, start_date, end_date)
+            elif dtype == "breathing_rate":
+                count = _sync_breathing_rate(conn, start_date, end_date)
+            elif dtype == "skin_temperature":
+                count = _sync_skin_temperature(conn, start_date, end_date)
+            elif dtype == "cardio_fitness":
+                count = _sync_cardio_fitness(conn, start_date, end_date)
+            elif dtype == "food_log":
+                count = _sync_food_log(conn, start_date, end_date)
             else:
                 results[dtype] = {"status": "error", "message": f"Unknown type: {dtype}"}
                 continue
 
-            db.log_sync(conn, dtype, "ok", count)
+            db.log_sync(conn, dtype, "ok", count, last_date_attempted=end_date.isoformat())
             results[dtype] = {
                 "status": "ok",
                 "records": count,
@@ -310,7 +485,8 @@ async def fitbit_sync(
 
     Args:
         data_types: What to sync. Options: "all", "heart_rate", "activity",
-            "exercises", "sleep", "weight", "spo2", "hrv".
+            "exercises", "sleep", "weight", "spo2", "hrv", "azm",
+            "breathing_rate", "skin_temperature", "cardio_fitness", "food_log".
             Comma-separated for multiple, e.g. "sleep,hrv". Default: "all".
         days: Days of history for first sync (default: 30). Ignored
             on subsequent syncs (uses last synced date).
@@ -321,7 +497,10 @@ async def fitbit_sync(
     """
     types = [t.strip() for t in data_types.split(",")]
     if "all" in types:
-        types = ["heart_rate", "activity", "exercises", "sleep", "weight", "spo2", "hrv"]
+        types = [
+            "heart_rate", "activity", "exercises", "sleep", "weight", "spo2", "hrv",
+            "azm", "breathing_rate", "skin_temperature", "cardio_fitness", "food_log",
+        ]
 
     results = await anyio.to_thread.run_sync(lambda: run_sync(types, days))
     return format_response(results)

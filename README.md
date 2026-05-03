@@ -14,7 +14,7 @@ Designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and o
 - **OAuth 2.0 PKCE** - Secure auth flow, no client secret needed
 - **Local SQLite cache** - Sync once, query instantly
 - **Incremental sync** - Only fetches new data since last sync
-- **9 MCP tools** - Sync, query (7 data types), and trend analysis
+- **17 MCP tools** - Sync, query (12 cached data types + devices/lifetime/goals), and trend analysis
 - **Live mode** - Bypass cache and query the API directly
 - **CLI** - Auth setup, sync, and JSON import from the command line
 - **Rate limit handling** - Automatic retry on 429 responses
@@ -30,6 +30,14 @@ Designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and o
 | `fitbit_get_weight` | Weight, BMI, body fat % |
 | `fitbit_get_spo2` | Blood oxygen saturation (avg/min/max) |
 | `fitbit_get_hrv` | Heart rate variability (RMSSD) |
+| `fitbit_get_azm` | Active Zone Minutes with per-zone breakdown |
+| `fitbit_get_breathing_rate` | Nightly breaths per minute |
+| `fitbit_get_temperature` | Nightly skin temperature variation (degrees C from baseline) |
+| `fitbit_get_cardio_fitness` | VO2 Max / Cardio Fitness Score |
+| `fitbit_get_food_log` | Daily food calories + water intake |
+| `fitbit_get_devices` | Paired devices, battery level, last sync (live) |
+| `fitbit_get_lifetime_stats` | All-time totals and personal best records (live) |
+| `fitbit_get_goals` | User-set daily/weekly activity goals (live) |
 | `fitbit_trends` | Aggregated averages (weekly/monthly/quarterly) |
 
 ## Requirements
@@ -114,14 +122,14 @@ All query tools accept these common parameters:
 
 Syncs data from the Fitbit API to the local SQLite cache. Query tools call this automatically on first use of the day, so explicit calls are only needed for longer history or forced refresh.
 
-- `data_types` - What to sync: `all`, `heart_rate`, `activity`, `exercises`, `sleep`, `weight`, `spo2`, `hrv`. Comma-separated. Default: `all`.
+- `data_types` - What to sync: `all`, `heart_rate`, `activity`, `exercises`, `sleep`, `weight`, `spo2`, `hrv`, `azm`, `breathing_rate`, `skin_temperature`, `cardio_fitness`, `food_log`. Comma-separated. Default: `all`.
 - `days` - Days of history for first sync (default: 30). Subsequent syncs are incremental.
 
 ### fitbit_trends
 
 Aggregated trend analysis from cached data.
 
-- `data_type` - What to analyse: `heart_rate`, `activity`, `exercises`, `sleep`, `weight`, `spo2`, `hrv`. Default: `activity`.
+- `data_type` - What to analyse: `heart_rate`, `activity`, `exercises`, `sleep`, `weight`, `spo2`, `hrv`, `azm`, `breathing_rate`, `skin_temperature`, `cardio_fitness`, `food_log`. Default: `activity`.
 - `period` - Aggregation: `weekly`, `monthly`, `quarterly`. Default: `monthly`.
 - `start_date` - Start date. Default: last 12 months (365 days).
 - `end_date` - End date. Default: today.
@@ -133,14 +141,20 @@ The following Fitbit API scopes are requested during setup:
 
 | Scope | Data accessed |
 |-------|--------------|
-| `activity` | Steps, calories, active minutes, distance |
-| `heartrate` | Resting HR and HR zones |
+| `activity` | Steps, calories, active minutes, distance, AZM, lifetime stats, goals |
+| `heartrate` | Resting HR, HR zones, HRV |
 | `sleep` | Sleep duration and stages |
 | `weight` | Weight, BMI, body fat % |
 | `oxygen_saturation` | SpO2 (blood oxygen) |
 | `profile` | User profile (user ID, display name) |
+| `respiratory_rate` | Nightly breathing rate |
+| `temperature` | Skin temperature variation |
+| `cardio_fitness` | VO2 Max / Cardio Fitness Score |
+| `nutrition` | Daily food calorie and water log |
+| `location` | GPS data on logged exercises |
+| `settings` | Paired devices (battery, last sync) |
 
-These are the minimum scopes needed for all 9 tools. If you only need a subset, you can edit `FITBIT_SCOPES` in `config.py` before setup.
+These are the scopes needed for all tools. If you only need a subset, edit `FITBIT_SCOPES` in `config.py` before setup. After upgrading from a smaller scope set, re-run `fitbit-mcp auth` to re-authorise.
 
 ## Configuration
 
@@ -155,9 +169,9 @@ Paths are overridable via environment variables:
 
 The Fitbit API allows 150 requests per hour. The sync tool handles rate limits automatically, but be aware:
 
-- Activity sync uses 1 API call per day (no date-range endpoint available)
-- A 30-day initial sync uses ~30 of your 150/hour quota
-- Heart rate, sleep, weight, SpO2, and HRV use date-range endpoints and are much more efficient
+- Activity and food log syncs use 1 API call per day (no date-range endpoint available)
+- A 30-day initial sync of either uses ~30 of your 150/hour quota
+- Heart rate, sleep, weight, SpO2, HRV, AZM, breathing rate, skin temperature, and cardio fitness use date-range endpoints and are much more efficient
 
 Use `live=False` (the default) to query from cache and avoid API calls entirely.
 

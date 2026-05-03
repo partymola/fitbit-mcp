@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Eight new data types and corresponding query tools:
+  - `fitbit_get_azm` - Active Zone Minutes with per-zone breakdown (fat burn / cardio / peak)
+  - `fitbit_get_breathing_rate` - nightly breaths per minute
+  - `fitbit_get_temperature` - nightly skin temperature variation
+  - `fitbit_get_cardio_fitness` - VO2 Max / Cardio Fitness Score (low and high of Fitbit's reported range)
+  - `fitbit_get_food_log` - daily food calories and water intake
+  - `fitbit_get_devices` - paired devices, battery level, last sync (live only)
+  - `fitbit_get_lifetime_stats` - all-time totals and personal best records (live only)
+  - `fitbit_get_goals` - user-set daily/weekly activity goals (live only)
+- `fitbit_sync` and `fitbit_trends` extended to cover the five new cached types (`azm`, `breathing_rate`, `skin_temperature`, `cardio_fitness`, `food_log`).
+- Six additional OAuth scopes requested at auth time: `respiratory_rate`, `temperature`, `cardio_fitness`, `location`, `nutrition`, `settings`. Existing users must re-run `fitbit-mcp auth` to grant these and unlock the new tools.
+- `sync_log` now records each successful sync's end-date (`last_date_attempted`) so sparse-data syncs (e.g. `food_log` when the user does not log every day) advance the cursor forward instead of re-querying every confirmed-empty day. The schema migrates automatically (additive `ALTER TABLE`, idempotent). Existing users with populated DBs will pay the old cost on their first post-upgrade sync (column starts NULL for all historical rows, so the cursor falls back to the data table's `MAX(date)`); subsequent syncs use the new column and skip the empty-day replay.
+
 ### Fixed
 
 - Weight values from `fitbit_get_weight` were returned in stones but labelled as `weight_kg`. The API client previously sent `Accept-Language: en_GB`, which causes the Fitbit Web API to return weight in stones (UK convention) while keeping distance in km. The header is now omitted, so all responses are full metric (kg, km). BMI was unaffected.

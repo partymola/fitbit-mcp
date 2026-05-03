@@ -103,5 +103,46 @@ def populated_db(tmp_db):
             "deep_rmssd": 40.0 + i * 2.5,
         })
 
+    # AZM - 5 days
+    for i in range(5):
+        db.save_azm(tmp_db, {
+            "date": f"2026-03-{10+i:02d}",
+            "total_minutes": 30 + i * 5,
+            "fat_burn_minutes": 20 + i * 2,
+            "cardio_minutes": 10 + i,
+            "peak_minutes": i,
+        })
+
+    # Breathing rate - 5 nights
+    for i in range(5):
+        db.save_breathing_rate(tmp_db, {
+            "date": f"2026-03-{10+i:02d}",
+            "breaths_per_min": 14.0 + i * 0.2,
+        })
+
+    # Skin temperature - 5 nights
+    for i in range(5):
+        db.save_skin_temperature(tmp_db, {
+            "date": f"2026-03-{10+i:02d}",
+            "nightly_relative": -0.2 + i * 0.1,
+            "log_type": "dermal",
+        })
+
+    # Cardio fitness - 3 readings
+    for i in range(3):
+        db.save_cardio_fitness(tmp_db, {
+            "date": f"2026-03-{10+i*2:02d}",
+            "vo2_max_low": 38.0 + i,
+            "vo2_max_high": 42.0 + i,
+        })
+
+    # Food log - 4 days
+    for i in range(4):
+        db.save_food_log(tmp_db, {
+            "date": f"2026-03-{10+i:02d}",
+            "calories_in": 2000 + i * 50,
+            "water_ml": 1500.0 + i * 100,
+        })
+
     tmp_db.commit()
     return tmp_db

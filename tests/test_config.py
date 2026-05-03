@@ -40,12 +40,26 @@ class TestConfigDefaults:
         from fitbit_mcp.config import (
             MAX_RANGE_DAYS, SLEEP_MAX_RANGE_DAYS,
             WEIGHT_MAX_RANGE_DAYS, SPO2_MAX_RANGE_DAYS, HRV_MAX_RANGE_DAYS,
+            AZM_MAX_RANGE_DAYS, BREATHING_RATE_MAX_RANGE_DAYS,
+            SKIN_TEMPERATURE_MAX_RANGE_DAYS, CARDIO_FITNESS_MAX_RANGE_DAYS,
         )
         assert MAX_RANGE_DAYS == 365
         assert SLEEP_MAX_RANGE_DAYS == 100
         assert WEIGHT_MAX_RANGE_DAYS == 31
         assert SPO2_MAX_RANGE_DAYS == 30
         assert HRV_MAX_RANGE_DAYS == 30
+        assert AZM_MAX_RANGE_DAYS == 1095
+        assert BREATHING_RATE_MAX_RANGE_DAYS == 30
+        assert SKIN_TEMPERATURE_MAX_RANGE_DAYS == 30
+        assert CARDIO_FITNESS_MAX_RANGE_DAYS == 30
+
+    def test_new_scopes_present(self):
+        from fitbit_mcp.config import FITBIT_SCOPES
+        for scope in [
+            "respiratory_rate", "temperature", "cardio_fitness",
+            "location", "nutrition", "settings",
+        ]:
+            assert scope in FITBIT_SCOPES, f"missing scope: {scope}"
 
 
 class TestConfigOverrides:
