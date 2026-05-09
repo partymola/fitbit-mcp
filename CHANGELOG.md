@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `fitbit-mcp --version` prints the installed package version.
 - Eight new data types and corresponding query tools:
   - `fitbit_get_azm` - Active Zone Minutes with per-zone breakdown (fat burn / cardio / peak)
   - `fitbit_get_breathing_rate` - nightly breaths per minute

@@ -2,6 +2,7 @@
 
 Usage:
     fitbit-mcp                Start the MCP server (stdio transport)
+    fitbit-mcp --version      Print the installed package version
     fitbit-mcp auth           Interactive OAuth setup
     fitbit-mcp sync           Run data sync (for cron/systemd use)
     fitbit-mcp import         Import existing JSON data files into SQLite
@@ -9,6 +10,7 @@ Usage:
 
 import logging
 import sys
+from importlib.metadata import version
 
 # Configure logging to stderr (stdout is reserved for JSON-RPC on stdio)
 logging.basicConfig(
@@ -37,6 +39,14 @@ from .tools import lifetime_stats_tools  # noqa: E402, F401
 from .tools import analysis_tools  # noqa: E402, F401
 
 
+def _version_text():
+    return f"fitbit-mcp {version('fitbit-mcp')}"
+
+
+def _add_version_argument(parser):
+    parser.add_argument("--version", action="version", version=_version_text())
+
+
 def main():
     if len(sys.argv) == 1:
         # No subcommand: start MCP server on stdio
@@ -48,11 +58,14 @@ def main():
         prog="fitbit-mcp",
         description="Fitbit MCP server - serves Fitbit data via the Model Context Protocol.",
     )
+    _add_version_argument(parser)
     subparsers = parser.add_subparsers(dest="cmd", metavar="COMMAND")
 
-    subparsers.add_parser("auth", help="Interactive OAuth setup")
+    auth_parser = subparsers.add_parser("auth", help="Interactive OAuth setup")
+    _add_version_argument(auth_parser)
 
     sync_parser = subparsers.add_parser("sync", help="Sync Fitbit data to local SQLite cache")
+    _add_version_argument(sync_parser)
     sync_parser.add_argument("--days", type=int, default=30, help="Days of history for first sync (default: 30)")
     sync_parser.add_argument(
         "--types", default="all",
@@ -63,6 +76,7 @@ def main():
     )
 
     import_parser = subparsers.add_parser("import", help="Import existing Fitbit JSON data files into SQLite")
+    _add_version_argument(import_parser)
     import_parser.add_argument("--data-dir", required=True, help="Directory containing Fitbit JSON data files")
 
     args = parser.parse_args()
