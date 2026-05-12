@@ -35,6 +35,13 @@ Please install it before your first commit.
 .venv/bin/python -m pytest tests/ -v
 ```
 
+### Run lint and formatting checks
+
+```bash
+.venv/bin/python -m ruff check src tests
+.venv/bin/python -m ruff format --check src tests
+```
+
 Tests are fully offline - no real API calls, no real tokens. Fixtures use fictional data and fixed past dates; never paste real health measurements into tests.
 
 ## Making changes
