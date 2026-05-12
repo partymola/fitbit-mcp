@@ -16,13 +16,18 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs, urlencode
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from .config import (
-    CONFIG_DIR, FITBIT_CONFIG_PATH, FITBIT_TOKENS_PATH,
-    FITBIT_AUTH_URL, FITBIT_TOKEN_URL, FITBIT_SCOPES,
-    FITBIT_CALLBACK_PORT, FITBIT_REDIRECT_URI,
+    CONFIG_DIR,
+    FITBIT_AUTH_URL,
+    FITBIT_CALLBACK_PORT,
+    FITBIT_CONFIG_PATH,
+    FITBIT_REDIRECT_URI,
+    FITBIT_SCOPES,
+    FITBIT_TOKEN_URL,
+    FITBIT_TOKENS_PATH,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,15 +82,22 @@ def refresh_token() -> str:
         if not _cached_tokens.get("refresh_token"):
             raise RuntimeError("Token expired and no refresh token. Run: fitbit-mcp auth")
 
-        data = urlencode({
-            "grant_type": "refresh_token",
-            "client_id": _cached_config["client_id"],
-            "refresh_token": _cached_tokens["refresh_token"],
-        }).encode()
+        data = urlencode(
+            {
+                "grant_type": "refresh_token",
+                "client_id": _cached_config["client_id"],
+                "refresh_token": _cached_tokens["refresh_token"],
+            }
+        ).encode()
 
-        req = urllib.request.Request(FITBIT_TOKEN_URL, data=data, method="POST", headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-        })
+        req = urllib.request.Request(
+            FITBIT_TOKEN_URL,
+            data=data,
+            method="POST",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
 
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -128,7 +140,7 @@ def setup_auth():
 
     if not config:
         print("Register a personal app at https://dev.fitbit.com/apps")
-        print(f"Set OAuth 2.0 Application Type to: Personal")
+        print("Set OAuth 2.0 Application Type to: Personal")
         print(f"Set Redirect URL to: {FITBIT_REDIRECT_URI}")
         client_id = input("Client ID: ").strip()
         if not client_id:
@@ -153,17 +165,24 @@ def setup_auth():
                 return
 
             # Exchange code for tokens
-            data = urlencode({
-                "client_id": config["client_id"],
-                "grant_type": "authorization_code",
-                "code": code,
-                "code_verifier": verifier,
-                "redirect_uri": FITBIT_REDIRECT_URI,
-            }).encode()
+            data = urlencode(
+                {
+                    "client_id": config["client_id"],
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "code_verifier": verifier,
+                    "redirect_uri": FITBIT_REDIRECT_URI,
+                }
+            ).encode()
 
-            req = urllib.request.Request(FITBIT_TOKEN_URL, data=data, method="POST", headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-            })
+            req = urllib.request.Request(
+                FITBIT_TOKEN_URL,
+                data=data,
+                method="POST",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
             try:
                 with urllib.request.urlopen(req, timeout=15) as r:
                     tokens = json.loads(r.read().decode())
@@ -177,23 +196,27 @@ def setup_auth():
             self.send_response(status_code)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            self.wfile.write(
-                f"<html><body><h2>{message}</h2></body></html>".encode()
-            )
+            self.wfile.write(f"<html><body><h2>{message}</h2></body></html>".encode())
 
         def log_message(self, format, *args):
             pass
 
-    auth_url = FITBIT_AUTH_URL + "?" + urlencode({
-        "client_id": config["client_id"],
-        "response_type": "code",
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-        "redirect_uri": FITBIT_REDIRECT_URI,
-        "scope": FITBIT_SCOPES,
-    })
+    auth_url = (
+        FITBIT_AUTH_URL
+        + "?"
+        + urlencode(
+            {
+                "client_id": config["client_id"],
+                "response_type": "code",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "redirect_uri": FITBIT_REDIRECT_URI,
+                "scope": FITBIT_SCOPES,
+            }
+        )
+    )
 
-    print(f"\nOpening browser for Fitbit auth...")
+    print("\nOpening browser for Fitbit auth...")
     print(f"If it doesn't open, visit:\n{auth_url}\n")
     webbrowser.open(auth_url)
 
@@ -222,5 +245,6 @@ def setup_auth():
     print(f"Tokens saved. User ID: {raw.get('user_id')}")
     print("\nSetup complete. Register with Claude Code:")
     import shutil
+
     exe = shutil.which("fitbit-mcp") or "fitbit-mcp"
     print(f"  claude mcp add -s user fitbit -- {exe}")

@@ -1,14 +1,11 @@
 """Tests for the OAuth authentication module."""
 
-import json
 import os
 import time
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
-from fitbit_mcp.auth import _generate_pkce, _save_json, _load_json, refresh_token
+from fitbit_mcp.auth import _generate_pkce, _load_json, _save_json, refresh_token
 
 
 class TestPKCE:
@@ -22,7 +19,8 @@ class TestPKCE:
         _, challenge = _generate_pkce()
         # Base64url: only alphanumeric, hyphen, underscore (no padding)
         import re
-        assert re.match(r'^[A-Za-z0-9_-]+$', challenge)
+
+        assert re.match(r"^[A-Za-z0-9_-]+$", challenge)
 
     def test_different_each_call(self):
         v1, c1 = _generate_pkce()
@@ -34,6 +32,7 @@ class TestPKCE:
         """Verify the challenge is the SHA256 of the verifier."""
         import base64
         import hashlib
+
         verifier, challenge = _generate_pkce()
         digest = hashlib.sha256(verifier.encode("ascii")).digest()
         expected = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
@@ -79,6 +78,7 @@ class TestRefreshToken:
 
     def test_returns_cached_if_not_expired(self, tmp_path):
         import fitbit_mcp.auth as auth
+
         old_cached_tokens = auth._cached_tokens
         old_cached_config = auth._cached_config
 
@@ -99,6 +99,7 @@ class TestRefreshToken:
 
     def test_raises_if_no_refresh_token(self, tmp_path):
         import fitbit_mcp.auth as auth
+
         old_cached_tokens = auth._cached_tokens
         old_cached_config = auth._cached_config
 

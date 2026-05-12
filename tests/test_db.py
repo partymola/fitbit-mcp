@@ -1,9 +1,5 @@
 """Tests for the SQLite database layer."""
 
-import json
-
-import pytest
-
 from fitbit_mcp import db
 
 
@@ -69,10 +65,16 @@ class TestSaveAndQuery:
 
     def test_activity_save_query(self, tmp_db):
         row = {
-            "date": "2026-03-15", "steps": 10000, "calories_out": 2500,
-            "active_minutes": 45, "very_active_minutes": 20,
-            "fairly_active_minutes": 25, "lightly_active_minutes": 200,
-            "sedentary_minutes": 500, "floors": 10, "distance_km": 7.5,
+            "date": "2026-03-15",
+            "steps": 10000,
+            "calories_out": 2500,
+            "active_minutes": 45,
+            "very_active_minutes": 20,
+            "fairly_active_minutes": 25,
+            "lightly_active_minutes": 200,
+            "sedentary_minutes": 500,
+            "floors": 10,
+            "distance_km": 7.5,
         }
         db.save_activity(tmp_db, row)
         tmp_db.commit()
@@ -83,10 +85,16 @@ class TestSaveAndQuery:
 
     def test_exercise_save_query(self, tmp_db):
         row = {
-            "date": "2026-03-15", "name": "Running", "duration_min": 30,
-            "calories": 350, "avg_hr": 145, "steps": 4000,
-            "distance_km": 5.0, "distance_unit": "Kilometer",
-            "start_time": "2026-03-15T07:00:00", "source": "Tracker",
+            "date": "2026-03-15",
+            "name": "Running",
+            "duration_min": 30,
+            "calories": 350,
+            "avg_hr": 145,
+            "steps": 4000,
+            "distance_km": 5.0,
+            "distance_unit": "Kilometer",
+            "start_time": "2026-03-15T07:00:00",
+            "source": "Tracker",
             "log_type": "auto_detected",
         }
         db.save_exercise(tmp_db, "log123", row)
@@ -97,18 +105,40 @@ class TestSaveAndQuery:
         assert rows[0]["log_id"] == "log123"
 
     def test_exercise_type_filter(self, tmp_db):
-        db.save_exercise(tmp_db, "log1", {
-            "date": "2026-03-15", "name": "Walk", "duration_min": 30,
-            "calories": 150, "avg_hr": 100, "steps": 3000,
-            "distance_km": 2.0, "distance_unit": "Kilometer",
-            "start_time": "2026-03-15T08:00:00", "source": "Tracker", "log_type": "auto_detected",
-        })
-        db.save_exercise(tmp_db, "log2", {
-            "date": "2026-03-15", "name": "Cycling", "duration_min": 45,
-            "calories": 400, "avg_hr": 130, "steps": None,
-            "distance_km": 12.0, "distance_unit": "Kilometer",
-            "start_time": "2026-03-15T17:00:00", "source": "Tracker", "log_type": "auto_detected",
-        })
+        db.save_exercise(
+            tmp_db,
+            "log1",
+            {
+                "date": "2026-03-15",
+                "name": "Walk",
+                "duration_min": 30,
+                "calories": 150,
+                "avg_hr": 100,
+                "steps": 3000,
+                "distance_km": 2.0,
+                "distance_unit": "Kilometer",
+                "start_time": "2026-03-15T08:00:00",
+                "source": "Tracker",
+                "log_type": "auto_detected",
+            },
+        )
+        db.save_exercise(
+            tmp_db,
+            "log2",
+            {
+                "date": "2026-03-15",
+                "name": "Cycling",
+                "duration_min": 45,
+                "calories": 400,
+                "avg_hr": 130,
+                "steps": None,
+                "distance_km": 12.0,
+                "distance_unit": "Kilometer",
+                "start_time": "2026-03-15T17:00:00",
+                "source": "Tracker",
+                "log_type": "auto_detected",
+            },
+        )
         tmp_db.commit()
 
         walks = db.query_exercises(tmp_db, "2026-03-15", "2026-03-15", "walk")
@@ -123,9 +153,14 @@ class TestSaveAndQuery:
 
     def test_sleep_save_query(self, tmp_db):
         row = {
-            "date": "2026-03-15", "total_minutes": 450, "efficiency": 92,
-            "start_time": "2026-03-14T23:00:00", "end_time": "2026-03-15T06:30:00",
-            "deep_minutes": 70, "light_minutes": 210, "rem_minutes": 110,
+            "date": "2026-03-15",
+            "total_minutes": 450,
+            "efficiency": 92,
+            "start_time": "2026-03-14T23:00:00",
+            "end_time": "2026-03-15T06:30:00",
+            "deep_minutes": 70,
+            "light_minutes": 210,
+            "rem_minutes": 110,
             "wake_minutes": 60,
         }
         db.save_sleep(tmp_db, row)
@@ -135,7 +170,9 @@ class TestSaveAndQuery:
         assert rows[0]["efficiency"] == 92
 
     def test_weight_save_query(self, tmp_db):
-        db.save_weight(tmp_db, {"date": "2026-03-15", "weight_kg": 78.5, "bmi": 24.2, "fat_pct": 18.5})
+        db.save_weight(
+            tmp_db, {"date": "2026-03-15", "weight_kg": 78.5, "bmi": 24.2, "fat_pct": 18.5}
+        )
         tmp_db.commit()
         rows = db.query_weight(tmp_db, "2026-03-15", "2026-03-15")
         assert len(rows) == 1
@@ -156,10 +193,16 @@ class TestSaveAndQuery:
         assert rows[0]["daily_rmssd"] == 38.5
 
     def test_azm_save_query(self, tmp_db):
-        db.save_azm(tmp_db, {
-            "date": "2026-03-15", "total_minutes": 42,
-            "fat_burn_minutes": 25, "cardio_minutes": 12, "peak_minutes": 5,
-        })
+        db.save_azm(
+            tmp_db,
+            {
+                "date": "2026-03-15",
+                "total_minutes": 42,
+                "fat_burn_minutes": 25,
+                "cardio_minutes": 12,
+                "peak_minutes": 5,
+            },
+        )
         tmp_db.commit()
         rows = db.query_azm(tmp_db, "2026-03-15", "2026-03-15")
         assert len(rows) == 1
@@ -174,9 +217,14 @@ class TestSaveAndQuery:
         assert rows[0]["breaths_per_min"] == 14.2
 
     def test_skin_temperature_save_query(self, tmp_db):
-        db.save_skin_temperature(tmp_db, {
-            "date": "2026-03-15", "nightly_relative": -0.3, "log_type": "dermal",
-        })
+        db.save_skin_temperature(
+            tmp_db,
+            {
+                "date": "2026-03-15",
+                "nightly_relative": -0.3,
+                "log_type": "dermal",
+            },
+        )
         tmp_db.commit()
         rows = db.query_skin_temperature(tmp_db, "2026-03-15", "2026-03-15")
         assert len(rows) == 1
@@ -184,9 +232,14 @@ class TestSaveAndQuery:
         assert rows[0]["log_type"] == "dermal"
 
     def test_cardio_fitness_save_query(self, tmp_db):
-        db.save_cardio_fitness(tmp_db, {
-            "date": "2026-03-15", "vo2_max_low": 38.0, "vo2_max_high": 42.0,
-        })
+        db.save_cardio_fitness(
+            tmp_db,
+            {
+                "date": "2026-03-15",
+                "vo2_max_low": 38.0,
+                "vo2_max_high": 42.0,
+            },
+        )
         tmp_db.commit()
         rows = db.query_cardio_fitness(tmp_db, "2026-03-15", "2026-03-15")
         assert len(rows) == 1
@@ -214,36 +267,76 @@ class TestUpsert:
         assert rows[0]["resting_hr"] == 65
 
     def test_activity_upsert(self, tmp_db):
-        db.save_activity(tmp_db, {
-            "date": "2026-03-15", "steps": 5000, "calories_out": 2000,
-            "active_minutes": 20, "very_active_minutes": 10,
-            "fairly_active_minutes": 10, "lightly_active_minutes": 150,
-            "sedentary_minutes": 700, "floors": 3, "distance_km": 3.5,
-        })
-        db.save_activity(tmp_db, {
-            "date": "2026-03-15", "steps": 12000, "calories_out": 2800,
-            "active_minutes": 60, "very_active_minutes": 30,
-            "fairly_active_minutes": 30, "lightly_active_minutes": 200,
-            "sedentary_minutes": 400, "floors": 12, "distance_km": 9.0,
-        })
+        db.save_activity(
+            tmp_db,
+            {
+                "date": "2026-03-15",
+                "steps": 5000,
+                "calories_out": 2000,
+                "active_minutes": 20,
+                "very_active_minutes": 10,
+                "fairly_active_minutes": 10,
+                "lightly_active_minutes": 150,
+                "sedentary_minutes": 700,
+                "floors": 3,
+                "distance_km": 3.5,
+            },
+        )
+        db.save_activity(
+            tmp_db,
+            {
+                "date": "2026-03-15",
+                "steps": 12000,
+                "calories_out": 2800,
+                "active_minutes": 60,
+                "very_active_minutes": 30,
+                "fairly_active_minutes": 30,
+                "lightly_active_minutes": 200,
+                "sedentary_minutes": 400,
+                "floors": 12,
+                "distance_km": 9.0,
+            },
+        )
         tmp_db.commit()
         rows = db.query_activity(tmp_db, "2026-03-15", "2026-03-15")
         assert len(rows) == 1
         assert rows[0]["steps"] == 12000
 
     def test_exercise_upsert_same_log_id(self, tmp_db):
-        db.save_exercise(tmp_db, "log1", {
-            "date": "2026-03-15", "name": "Walk", "duration_min": 30,
-            "calories": 150, "avg_hr": 100, "steps": 3000,
-            "distance_km": 2.0, "distance_unit": "Kilometer",
-            "start_time": "2026-03-15T08:00:00", "source": "Tracker", "log_type": "auto_detected",
-        })
-        db.save_exercise(tmp_db, "log1", {
-            "date": "2026-03-15", "name": "Walk", "duration_min": 45,
-            "calories": 200, "avg_hr": 105, "steps": 4500,
-            "distance_km": 3.0, "distance_unit": "Kilometer",
-            "start_time": "2026-03-15T08:00:00", "source": "Tracker", "log_type": "auto_detected",
-        })
+        db.save_exercise(
+            tmp_db,
+            "log1",
+            {
+                "date": "2026-03-15",
+                "name": "Walk",
+                "duration_min": 30,
+                "calories": 150,
+                "avg_hr": 100,
+                "steps": 3000,
+                "distance_km": 2.0,
+                "distance_unit": "Kilometer",
+                "start_time": "2026-03-15T08:00:00",
+                "source": "Tracker",
+                "log_type": "auto_detected",
+            },
+        )
+        db.save_exercise(
+            tmp_db,
+            "log1",
+            {
+                "date": "2026-03-15",
+                "name": "Walk",
+                "duration_min": 45,
+                "calories": 200,
+                "avg_hr": 105,
+                "steps": 4500,
+                "distance_km": 3.0,
+                "distance_unit": "Kilometer",
+                "start_time": "2026-03-15T08:00:00",
+                "source": "Tracker",
+                "log_type": "auto_detected",
+            },
+        )
         tmp_db.commit()
         rows = db.query_exercises(tmp_db, "2026-03-15", "2026-03-15")
         assert len(rows) == 1

@@ -2,19 +2,24 @@
 
 import logging
 import time
-from datetime import date, timedelta, datetime, timezone
+from datetime import date, timedelta
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth
 from .. import api, db
 from ..config import (
-    MAX_RANGE_DAYS, SLEEP_MAX_RANGE_DAYS,
-    WEIGHT_MAX_RANGE_DAYS, SPO2_MAX_RANGE_DAYS, HRV_MAX_RANGE_DAYS,
-    AZM_MAX_RANGE_DAYS, BREATHING_RATE_MAX_RANGE_DAYS,
-    SKIN_TEMPERATURE_MAX_RANGE_DAYS, CARDIO_FITNESS_MAX_RANGE_DAYS,
+    AZM_MAX_RANGE_DAYS,
+    BREATHING_RATE_MAX_RANGE_DAYS,
+    CARDIO_FITNESS_MAX_RANGE_DAYS,
+    HRV_MAX_RANGE_DAYS,
+    MAX_RANGE_DAYS,
+    SKIN_TEMPERATURE_MAX_RANGE_DAYS,
+    SLEEP_MAX_RANGE_DAYS,
+    SPO2_MAX_RANGE_DAYS,
+    WEIGHT_MAX_RANGE_DAYS,
 )
+from ..helpers import format_response, require_auth
+from ..mcp_instance import mcp
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +45,8 @@ def _sync_heart_rate(conn, start_date: date, end_date: date) -> int:
             ds = entry["dateTime"]
             value = entry.get("value", {})
             db.save_heart_rate(
-                conn, ds,
+                conn,
+                ds,
                 value.get("restingHeartRate"),
                 value.get("heartRateZones", []),
             )
@@ -68,21 +74,24 @@ def _sync_activity(conn, start_date: date, end_date: date) -> int:
         summary = data.get("summary", {})
         distances = summary.get("distances", [{}])
         distance_km = distances[0].get("distance") if distances else None
-        db.save_activity(conn, {
-            "date": d.isoformat(),
-            "steps": summary.get("steps"),
-            "calories_out": summary.get("caloriesOut"),
-            "active_minutes": (
-                (summary.get("veryActiveMinutes") or 0) +
-                (summary.get("fairlyActiveMinutes") or 0)
-            ),
-            "very_active_minutes": summary.get("veryActiveMinutes"),
-            "fairly_active_minutes": summary.get("fairlyActiveMinutes"),
-            "lightly_active_minutes": summary.get("lightlyActiveMinutes"),
-            "sedentary_minutes": summary.get("sedentaryMinutes"),
-            "floors": summary.get("floors"),
-            "distance_km": distance_km,
-        })
+        db.save_activity(
+            conn,
+            {
+                "date": d.isoformat(),
+                "steps": summary.get("steps"),
+                "calories_out": summary.get("caloriesOut"),
+                "active_minutes": (
+                    (summary.get("veryActiveMinutes") or 0)
+                    + (summary.get("fairlyActiveMinutes") or 0)
+                ),
+                "very_active_minutes": summary.get("veryActiveMinutes"),
+                "fairly_active_minutes": summary.get("fairlyActiveMinutes"),
+                "lightly_active_minutes": summary.get("lightlyActiveMinutes"),
+                "sedentary_minutes": summary.get("sedentaryMinutes"),
+                "floors": summary.get("floors"),
+                "distance_km": distance_km,
+            },
+        )
         count += 1
         d += timedelta(days=1)
     conn.commit()
@@ -108,19 +117,23 @@ def _sync_exercises(conn, start_date: date, end_date: date) -> int:
                 past_end = True
                 break
             log_id = str(entry.get("logId", ""))
-            db.save_exercise(conn, log_id, {
-                "date": log_date,
-                "name": entry.get("activityName"),
-                "duration_min": (entry.get("activeDuration") or 0) // 60000,
-                "calories": entry.get("calories"),
-                "avg_hr": entry.get("averageHeartRate"),
-                "steps": entry.get("steps"),
-                "distance_km": entry.get("distance"),
-                "distance_unit": entry.get("distanceUnit"),
-                "start_time": entry.get("startTime"),
-                "source": (entry.get("source") or {}).get("name"),
-                "log_type": entry.get("logType"),
-            })
+            db.save_exercise(
+                conn,
+                log_id,
+                {
+                    "date": log_date,
+                    "name": entry.get("activityName"),
+                    "duration_min": (entry.get("activeDuration") or 0) // 60000,
+                    "calories": entry.get("calories"),
+                    "avg_hr": entry.get("averageHeartRate"),
+                    "steps": entry.get("steps"),
+                    "distance_km": entry.get("distance"),
+                    "distance_unit": entry.get("distanceUnit"),
+                    "start_time": entry.get("startTime"),
+                    "source": (entry.get("source") or {}).get("name"),
+                    "log_type": entry.get("logType"),
+                },
+            )
             count += 1
 
         conn.commit()
@@ -145,17 +158,20 @@ def _sync_sleep(conn, start_date: date, end_date: date) -> int:
             if not ds:
                 continue
             stages = entry.get("levels", {}).get("summary", {})
-            db.save_sleep(conn, {
-                "date": ds,
-                "total_minutes": entry.get("minutesAsleep"),
-                "efficiency": entry.get("efficiency"),
-                "start_time": entry.get("startTime"),
-                "end_time": entry.get("endTime"),
-                "deep_minutes": (stages.get("deep") or {}).get("minutes"),
-                "light_minutes": (stages.get("light") or {}).get("minutes"),
-                "rem_minutes": (stages.get("rem") or {}).get("minutes"),
-                "wake_minutes": (stages.get("wake") or {}).get("minutes"),
-            })
+            db.save_sleep(
+                conn,
+                {
+                    "date": ds,
+                    "total_minutes": entry.get("minutesAsleep"),
+                    "efficiency": entry.get("efficiency"),
+                    "start_time": entry.get("startTime"),
+                    "end_time": entry.get("endTime"),
+                    "deep_minutes": (stages.get("deep") or {}).get("minutes"),
+                    "light_minutes": (stages.get("light") or {}).get("minutes"),
+                    "rem_minutes": (stages.get("rem") or {}).get("minutes"),
+                    "wake_minutes": (stages.get("wake") or {}).get("minutes"),
+                },
+            )
             count += 1
         conn.commit()
     return count
@@ -170,12 +186,15 @@ def _sync_weight(conn, start_date: date, end_date: date) -> int:
         for entry in data.get("weight", []):
             ds = entry.get("date")
             if ds:
-                db.save_weight(conn, {
-                    "date": ds,
-                    "weight_kg": entry.get("weight"),
-                    "bmi": entry.get("bmi"),
-                    "fat_pct": entry.get("fat"),
-                })
+                db.save_weight(
+                    conn,
+                    {
+                        "date": ds,
+                        "weight_kg": entry.get("weight"),
+                        "bmi": entry.get("bmi"),
+                        "fat_pct": entry.get("fat"),
+                    },
+                )
                 count += 1
         conn.commit()
     return count
@@ -194,12 +213,15 @@ def _sync_spo2(conn, start_date: date, end_date: date) -> int:
             if not ds or "value" not in entry:
                 # Empty response ({}) or missing data - skip
                 continue
-            db.save_spo2(conn, {
-                "date": ds,
-                "avg": entry["value"].get("avg"),
-                "min": entry["value"].get("min"),
-                "max": entry["value"].get("max"),
-            })
+            db.save_spo2(
+                conn,
+                {
+                    "date": ds,
+                    "avg": entry["value"].get("avg"),
+                    "min": entry["value"].get("min"),
+                    "max": entry["value"].get("max"),
+                },
+            )
             count += 1
         conn.commit()
     return count
@@ -214,11 +236,14 @@ def _sync_hrv(conn, start_date: date, end_date: date) -> int:
         for entry in data.get("hrv", []):
             ds = entry.get("dateTime")
             if ds and "value" in entry:
-                db.save_hrv(conn, {
-                    "date": ds,
-                    "daily_rmssd": entry["value"].get("dailyRmssd"),
-                    "deep_rmssd": entry["value"].get("deepRmssd"),
-                })
+                db.save_hrv(
+                    conn,
+                    {
+                        "date": ds,
+                        "daily_rmssd": entry["value"].get("dailyRmssd"),
+                        "deep_rmssd": entry["value"].get("deepRmssd"),
+                    },
+                )
                 count += 1
         conn.commit()
     return count
@@ -235,13 +260,16 @@ def _sync_azm(conn, start_date: date, end_date: date) -> int:
             value = entry.get("value", {}) or {}
             if not ds:
                 continue
-            db.save_azm(conn, {
-                "date": ds,
-                "total_minutes": value.get("activeZoneMinutes"),
-                "fat_burn_minutes": value.get("fatBurnActiveZoneMinutes"),
-                "cardio_minutes": value.get("cardioActiveZoneMinutes"),
-                "peak_minutes": value.get("peakActiveZoneMinutes"),
-            })
+            db.save_azm(
+                conn,
+                {
+                    "date": ds,
+                    "total_minutes": value.get("activeZoneMinutes"),
+                    "fat_burn_minutes": value.get("fatBurnActiveZoneMinutes"),
+                    "cardio_minutes": value.get("cardioActiveZoneMinutes"),
+                    "peak_minutes": value.get("peakActiveZoneMinutes"),
+                },
+            )
             count += 1
         conn.commit()
     return count
@@ -250,7 +278,9 @@ def _sync_azm(conn, start_date: date, end_date: date) -> int:
 def _sync_breathing_rate(conn, start_date: date, end_date: date) -> int:
     """Sync nightly breathing rate (avg breaths per minute)."""
     count = 0
-    for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, BREATHING_RATE_MAX_RANGE_DAYS):
+    for chunk_start, chunk_end in _chunk_date_ranges(
+        start_date, end_date, BREATHING_RATE_MAX_RANGE_DAYS
+    ):
         path = f"/1/user/-/br/date/{chunk_start}/{chunk_end}.json"
         data = api.get(path)
         for entry in data.get("br", []):
@@ -270,7 +300,9 @@ def _sync_breathing_rate(conn, start_date: date, end_date: date) -> int:
 def _sync_skin_temperature(conn, start_date: date, end_date: date) -> int:
     """Sync nightly skin temperature variation from baseline."""
     count = 0
-    for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, SKIN_TEMPERATURE_MAX_RANGE_DAYS):
+    for chunk_start, chunk_end in _chunk_date_ranges(
+        start_date, end_date, SKIN_TEMPERATURE_MAX_RANGE_DAYS
+    ):
         path = f"/1/user/-/temp/skin/date/{chunk_start}/{chunk_end}.json"
         data = api.get(path)
         for entry in data.get("tempSkin", []):
@@ -278,11 +310,14 @@ def _sync_skin_temperature(conn, start_date: date, end_date: date) -> int:
             value = entry.get("value", {}) or {}
             if not ds:
                 continue
-            db.save_skin_temperature(conn, {
-                "date": ds,
-                "nightly_relative": value.get("nightlyRelative"),
-                "log_type": entry.get("logType"),
-            })
+            db.save_skin_temperature(
+                conn,
+                {
+                    "date": ds,
+                    "nightly_relative": value.get("nightlyRelative"),
+                    "log_type": entry.get("logType"),
+                },
+            )
             count += 1
         conn.commit()
     return count
@@ -311,7 +346,9 @@ def _parse_vo2_max(raw) -> tuple[float | None, float | None]:
 def _sync_cardio_fitness(conn, start_date: date, end_date: date) -> int:
     """Sync VO2 Max / Cardio Fitness Score."""
     count = 0
-    for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, CARDIO_FITNESS_MAX_RANGE_DAYS):
+    for chunk_start, chunk_end in _chunk_date_ranges(
+        start_date, end_date, CARDIO_FITNESS_MAX_RANGE_DAYS
+    ):
         path = f"/1/user/-/cardioscore/date/{chunk_start}/{chunk_end}.json"
         data = api.get(path)
         for entry in data.get("cardioScore", []):
@@ -322,11 +359,14 @@ def _sync_cardio_fitness(conn, start_date: date, end_date: date) -> int:
             lo, hi = _parse_vo2_max(value.get("vo2Max"))
             if lo is None and hi is None:
                 continue
-            db.save_cardio_fitness(conn, {
-                "date": ds,
-                "vo2_max_low": lo,
-                "vo2_max_high": hi,
-            })
+            db.save_cardio_fitness(
+                conn,
+                {
+                    "date": ds,
+                    "vo2_max_low": lo,
+                    "vo2_max_high": hi,
+                },
+            )
             count += 1
         conn.commit()
     return count
@@ -366,11 +406,14 @@ def _sync_food_log(conn, start_date: date, end_date: date) -> int:
             d += timedelta(days=1)
             continue
         summary = data.get("summary", {}) or {}
-        db.save_food_log(conn, {
-            "date": d.isoformat(),
-            "calories_in": summary.get("calories"),
-            "water_ml": summary.get("water"),
-        })
+        db.save_food_log(
+            conn,
+            {
+                "date": d.isoformat(),
+                "calories_in": summary.get("calories"),
+                "water_ml": summary.get("water"),
+            },
+        )
         count += 1
         d += timedelta(days=1)
     conn.commit()
@@ -391,10 +434,12 @@ def run_sync(data_types: list[str], days: int = 30) -> dict:
             # table's MAX(date) freezes and we'd otherwise re-query every
             # day from then on, burning quota on confirmed-empty days.
             candidates = [
-                d for d in (
+                d
+                for d in (
                     db.get_last_synced_date(conn, dtype),
                     db.get_last_attempted_date(conn, dtype),
-                ) if d
+                )
+                if d
             ]
             if candidates:
                 start_date = date.fromisoformat(max(candidates))
@@ -498,8 +543,18 @@ async def fitbit_sync(
     types = [t.strip() for t in data_types.split(",")]
     if "all" in types:
         types = [
-            "heart_rate", "activity", "exercises", "sleep", "weight", "spo2", "hrv",
-            "azm", "breathing_rate", "skin_temperature", "cardio_fitness", "food_log",
+            "heart_rate",
+            "activity",
+            "exercises",
+            "sleep",
+            "weight",
+            "spo2",
+            "hrv",
+            "azm",
+            "breathing_rate",
+            "skin_temperature",
+            "cardio_fitness",
+            "food_log",
         ]
 
     results = await anyio.to_thread.run_sync(lambda: run_sync(types, days))

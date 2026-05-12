@@ -6,9 +6,9 @@ from datetime import date, timedelta
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth, parse_date, format_duration
 from .. import db
+from ..helpers import format_duration, format_response, parse_date, require_auth
+from ..mcp_instance import mcp
 from .sync_tools import auto_sync_if_stale
 
 
@@ -45,13 +45,15 @@ def _trend_heart_rate(conn, start_date: str, end_date: str, period: str) -> dict
     periods = []
     for key in sorted(buckets.keys()):
         vals = buckets[key]
-        periods.append({
-            "period": key,
-            "days": len(vals),
-            "avg_resting_hr": _avg(vals),
-            "min_resting_hr": min(vals) if vals else None,
-            "max_resting_hr": max(vals) if vals else None,
-        })
+        periods.append(
+            {
+                "period": key,
+                "days": len(vals),
+                "avg_resting_hr": _avg(vals),
+                "min_resting_hr": min(vals) if vals else None,
+                "max_resting_hr": max(vals) if vals else None,
+            }
+        )
     return {"periods": periods, "data_type": "heart_rate", "aggregation": period}
 
 
@@ -72,14 +74,16 @@ def _trend_activity(conn, start_date: str, end_date: str, period: str) -> dict:
     for key in sorted(buckets.keys()):
         b = buckets[key]
         dist = b.get("distance_km", [])
-        periods.append({
-            "period": key,
-            "days": len(b.get("steps", [])),
-            "avg_steps": _avg(b.get("steps", [])),
-            "avg_active_minutes": _avg(b.get("active_minutes", [])),
-            "total_distance_km": round(sum(dist), 1) if dist else None,
-            "avg_calories_out": _avg(b.get("calories_out", [])),
-        })
+        periods.append(
+            {
+                "period": key,
+                "days": len(b.get("steps", [])),
+                "avg_steps": _avg(b.get("steps", [])),
+                "avg_active_minutes": _avg(b.get("active_minutes", [])),
+                "total_distance_km": round(sum(dist), 1) if dist else None,
+                "avg_calories_out": _avg(b.get("calories_out", [])),
+            }
+        )
     return {"periods": periods, "data_type": "activity", "aggregation": period}
 
 
@@ -100,14 +104,16 @@ def _trend_sleep(conn, start_date: str, end_date: str, period: str) -> dict:
     for key in sorted(buckets.keys()):
         b = buckets[key]
         total = b.get("total_minutes", [])
-        periods.append({
-            "period": key,
-            "nights": len(total),
-            "avg_total_sleep": format_duration(_avg(total)),
-            "avg_deep_sleep": format_duration(_avg(b.get("deep_minutes", []))),
-            "avg_rem_sleep": format_duration(_avg(b.get("rem_minutes", []))),
-            "avg_efficiency": _avg(b.get("efficiency", [])),
-        })
+        periods.append(
+            {
+                "period": key,
+                "nights": len(total),
+                "avg_total_sleep": format_duration(_avg(total)),
+                "avg_deep_sleep": format_duration(_avg(b.get("deep_minutes", []))),
+                "avg_rem_sleep": format_duration(_avg(b.get("rem_minutes", []))),
+                "avg_efficiency": _avg(b.get("efficiency", [])),
+            }
+        )
     return {"periods": periods, "data_type": "sleep", "aggregation": period}
 
 
@@ -127,13 +133,15 @@ def _trend_weight(conn, start_date: str, end_date: str, period: str) -> dict:
     periods = []
     for key in sorted(buckets.keys()):
         b = buckets[key]
-        periods.append({
-            "period": key,
-            "count": len(b.get("weight_kg", [])),
-            "avg_weight_kg": _avg(b.get("weight_kg", [])),
-            "avg_fat_pct": _avg(b.get("fat_pct", [])),
-            "avg_bmi": _avg(b.get("bmi", [])),
-        })
+        periods.append(
+            {
+                "period": key,
+                "count": len(b.get("weight_kg", [])),
+                "avg_weight_kg": _avg(b.get("weight_kg", [])),
+                "avg_fat_pct": _avg(b.get("fat_pct", [])),
+                "avg_bmi": _avg(b.get("bmi", [])),
+            }
+        )
     return {"periods": periods, "data_type": "weight", "aggregation": period}
 
 
@@ -153,13 +161,15 @@ def _trend_spo2(conn, start_date: str, end_date: str, period: str) -> dict:
     periods = []
     for key in sorted(buckets.keys()):
         b = buckets[key]
-        periods.append({
-            "period": key,
-            "nights": len(b.get("avg", [])),
-            "avg_spo2": _avg(b.get("avg", [])),
-            "min_spo2": min(b.get("min", [0])) if b.get("min") else None,
-            "max_spo2": max(b.get("max", [0])) if b.get("max") else None,
-        })
+        periods.append(
+            {
+                "period": key,
+                "nights": len(b.get("avg", [])),
+                "avg_spo2": _avg(b.get("avg", [])),
+                "min_spo2": min(b.get("min", [0])) if b.get("min") else None,
+                "max_spo2": max(b.get("max", [0])) if b.get("max") else None,
+            }
+        )
     return {"periods": periods, "data_type": "spo2", "aggregation": period}
 
 
@@ -181,13 +191,15 @@ def _trend_exercises(conn, start_date: str, end_date: str, period: str) -> dict:
     for key in sorted(buckets.keys()):
         b = buckets[key]
         dur = b.get("duration_min", [])
-        periods.append({
-            "period": key,
-            "sessions": len(b.get("_count", [])),
-            "total_duration": format_duration(sum(dur)) if dur else None,
-            "avg_duration": format_duration(_avg(dur)),
-            "total_calories": sum(b.get("calories", [])) if b.get("calories") else None,
-        })
+        periods.append(
+            {
+                "period": key,
+                "sessions": len(b.get("_count", [])),
+                "total_duration": format_duration(sum(dur)) if dur else None,
+                "avg_duration": format_duration(_avg(dur)),
+                "total_calories": sum(b.get("calories", [])) if b.get("calories") else None,
+            }
+        )
     return {"periods": periods, "data_type": "exercises", "aggregation": period}
 
 
@@ -207,12 +219,14 @@ def _trend_hrv(conn, start_date: str, end_date: str, period: str) -> dict:
     periods = []
     for key in sorted(buckets.keys()):
         b = buckets[key]
-        periods.append({
-            "period": key,
-            "nights": len(b.get("daily_rmssd", [])),
-            "avg_daily_rmssd": _avg(b.get("daily_rmssd", [])),
-            "avg_deep_rmssd": _avg(b.get("deep_rmssd", [])),
-        })
+        periods.append(
+            {
+                "period": key,
+                "nights": len(b.get("daily_rmssd", [])),
+                "avg_daily_rmssd": _avg(b.get("daily_rmssd", [])),
+                "avg_deep_rmssd": _avg(b.get("deep_rmssd", [])),
+            }
+        )
     return {"periods": periods, "data_type": "hrv", "aggregation": period}
 
 
@@ -233,15 +247,17 @@ def _trend_azm(conn, start_date: str, end_date: str, period: str) -> dict:
     for key in sorted(buckets.keys()):
         b = buckets[key]
         total = b.get("total_minutes", [])
-        periods.append({
-            "period": key,
-            "days": len(total),
-            "avg_total_azm": _avg(total),
-            "total_azm": sum(total) if total else None,
-            "avg_fat_burn_minutes": _avg(b.get("fat_burn_minutes", [])),
-            "avg_cardio_minutes": _avg(b.get("cardio_minutes", [])),
-            "avg_peak_minutes": _avg(b.get("peak_minutes", [])),
-        })
+        periods.append(
+            {
+                "period": key,
+                "days": len(total),
+                "avg_total_azm": _avg(total),
+                "total_azm": sum(total) if total else None,
+                "avg_fat_burn_minutes": _avg(b.get("fat_burn_minutes", [])),
+                "avg_cardio_minutes": _avg(b.get("cardio_minutes", [])),
+                "avg_peak_minutes": _avg(b.get("peak_minutes", [])),
+            }
+        )
     return {"periods": periods, "data_type": "azm", "aggregation": period}
 
 
@@ -259,13 +275,15 @@ def _trend_breathing_rate(conn, start_date: str, end_date: str, period: str) -> 
     periods = []
     for key in sorted(buckets.keys()):
         vals = buckets[key]
-        periods.append({
-            "period": key,
-            "nights": len(vals),
-            "avg_breaths_per_min": _avg(vals),
-            "min_breaths_per_min": min(vals) if vals else None,
-            "max_breaths_per_min": max(vals) if vals else None,
-        })
+        periods.append(
+            {
+                "period": key,
+                "nights": len(vals),
+                "avg_breaths_per_min": _avg(vals),
+                "min_breaths_per_min": min(vals) if vals else None,
+                "max_breaths_per_min": max(vals) if vals else None,
+            }
+        )
     return {"periods": periods, "data_type": "breathing_rate", "aggregation": period}
 
 
@@ -283,13 +301,15 @@ def _trend_skin_temperature(conn, start_date: str, end_date: str, period: str) -
     periods = []
     for key in sorted(buckets.keys()):
         vals = buckets[key]
-        periods.append({
-            "period": key,
-            "nights": len(vals),
-            "avg_nightly_relative": _avg(vals),
-            "min_nightly_relative": min(vals) if vals else None,
-            "max_nightly_relative": max(vals) if vals else None,
-        })
+        periods.append(
+            {
+                "period": key,
+                "nights": len(vals),
+                "avg_nightly_relative": _avg(vals),
+                "min_nightly_relative": min(vals) if vals else None,
+                "max_nightly_relative": max(vals) if vals else None,
+            }
+        )
     return {"periods": periods, "data_type": "skin_temperature", "aggregation": period}
 
 
@@ -311,12 +331,14 @@ def _trend_cardio_fitness(conn, start_date: str, end_date: str, period: str) -> 
         b = buckets[key]
         lows = b.get("vo2_max_low", [])
         highs = b.get("vo2_max_high", [])
-        periods.append({
-            "period": key,
-            "readings": len(lows),
-            "avg_vo2_max_low": _avg(lows),
-            "avg_vo2_max_high": _avg(highs),
-        })
+        periods.append(
+            {
+                "period": key,
+                "readings": len(lows),
+                "avg_vo2_max_low": _avg(lows),
+                "avg_vo2_max_high": _avg(highs),
+            }
+        )
     return {"periods": periods, "data_type": "cardio_fitness", "aggregation": period}
 
 
@@ -338,12 +360,14 @@ def _trend_food_log(conn, start_date: str, end_date: str, period: str) -> dict:
         b = buckets[key]
         cals = b.get("calories_in", [])
         water = b.get("water_ml", [])
-        periods.append({
-            "period": key,
-            "days_logged": len(cals) or len(water),
-            "avg_calories_in": _avg(cals),
-            "avg_water_ml": _avg(water),
-        })
+        periods.append(
+            {
+                "period": key,
+                "days_logged": len(cals) or len(water),
+                "avg_calories_in": _avg(cals),
+                "avg_water_ml": _avg(water),
+            }
+        )
     return {"periods": periods, "data_type": "food_log", "aggregation": period}
 
 
@@ -360,14 +384,22 @@ def _parse_compare_range(part: str) -> tuple[date, date] | None:
     if re.match(r"^\d{4}-\d{2}$", part):
         year, month = int(part[:4]), int(part[5:7])
         start = date(year, month, 1)
-        end = date(year + 1, 1, 1) - timedelta(days=1) if month == 12 else date(year, month + 1, 1) - timedelta(days=1)
+        end = (
+            date(year + 1, 1, 1) - timedelta(days=1)
+            if month == 12
+            else date(year, month + 1, 1) - timedelta(days=1)
+        )
         return start, end
     m = re.match(r"^(\d{4})-Q([1-4])$", part)
     if m:
         year, q = int(m.group(1)), int(m.group(2))
         start = date(year, (q - 1) * 3 + 1, 1)
         end_month = q * 3
-        end = date(year + 1, 1, 1) - timedelta(days=1) if end_month == 12 else date(year, end_month + 1, 1) - timedelta(days=1)
+        end = (
+            date(year + 1, 1, 1) - timedelta(days=1)
+            if end_month == 12
+            else date(year, end_month + 1, 1) - timedelta(days=1)
+        )
         return start, end
     return None
 
@@ -375,13 +407,22 @@ def _parse_compare_range(part: str) -> tuple[date, date] | None:
 def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
     parts = re.split(r"\s+vs\s+", compare_str.strip(), maxsplit=1)
     if len(parts) != 2:
-        return {"error": "Invalid compare format. Use: 'last_30d vs previous_30d' or '2026-03 vs 2026-02'"}
+        return {
+            "error": (
+                "Invalid compare format. Use: 'last_30d vs previous_30d' or '2026-03 vs 2026-02'"
+            )
+        }
 
     ranges = []
     for part in parts:
         r = _parse_compare_range(part.strip())
         if r is None:
-            return {"error": f"Cannot parse period '{part}'. Use: last_30d, previous_30d, 2026-03, or 2026-Q1"}
+            return {
+                "error": (
+                    f"Cannot parse period '{part}'. Use: last_30d, "
+                    "previous_30d, 2026-03, or 2026-Q1"
+                )
+            }
         ranges.append(r)
 
     query_fns = {
@@ -400,7 +441,13 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
     }
     query_fn = query_fns.get(data_type)
     if not query_fn:
-        return {"error": f"Cannot compare data_type '{data_type}'. Use: heart_rate, activity, exercises, sleep, weight, spo2, hrv, azm, breathing_rate, skin_temperature, cardio_fitness, or food_log."}
+        return {
+            "error": (
+                f"Cannot compare data_type '{data_type}'. Use: heart_rate, "
+                "activity, exercises, sleep, weight, spo2, hrv, azm, "
+                "breathing_rate, skin_temperature, cardio_fitness, or food_log."
+            )
+        }
 
     def summarize(rows, dtype):
         if not rows:
@@ -428,7 +475,11 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
             return {"count": len(rows), "avg_daily_rmssd": _avg(rmssd)}
         elif dtype == "azm":
             azm = [r["total_minutes"] for r in rows if r.get("total_minutes") is not None]
-            return {"count": len(rows), "avg_total_azm": _avg(azm), "total_azm": sum(azm) if azm else None}
+            return {
+                "count": len(rows),
+                "avg_total_azm": _avg(azm),
+                "total_azm": sum(azm) if azm else None,
+            }
         elif dtype == "breathing_rate":
             br = [r["breaths_per_min"] for r in rows if r.get("breaths_per_min") is not None]
             return {"count": len(rows), "avg_breaths_per_min": _avg(br)}
@@ -487,6 +538,7 @@ async def fitbit_trends(
     For spo2: avg/min/max oxygen saturation. For hrv: daily and deep RMSSD.
     Not for raw data - use fitbit_get_* tools instead.
     """
+
     def _analyse():
         auto_sync_if_stale(data_type)
         conn = db.get_db()
@@ -515,7 +567,13 @@ async def fitbit_trends(
             if fn:
                 result = fn(conn, s, e, period)
             else:
-                result = {"error": f"Unknown data_type '{data_type}'. Use: heart_rate, activity, exercises, sleep, weight, spo2, hrv, azm, breathing_rate, skin_temperature, cardio_fitness, or food_log."}
+                result = {
+                    "error": (
+                        f"Unknown data_type '{data_type}'. Use: heart_rate, "
+                        "activity, exercises, sleep, weight, spo2, hrv, azm, "
+                        "breathing_rate, skin_temperature, cardio_fitness, or food_log."
+                    )
+                }
 
         conn.close()
         return result

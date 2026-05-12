@@ -1,29 +1,26 @@
 """Tests for the sync tool logic."""
 
-import json
 from datetime import date, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
-
+from fitbit_mcp import db
 from fitbit_mcp.tools.sync_tools import (
     _chunk_date_ranges,
-    _sync_heart_rate,
+    _parse_vo2_max,
     _sync_activity,
-    _sync_sleep,
-    _sync_weight,
-    _sync_spo2,
-    _sync_hrv,
-    _sync_exercises,
     _sync_azm,
     _sync_breathing_rate,
-    _sync_skin_temperature,
     _sync_cardio_fitness,
+    _sync_exercises,
     _sync_food_log,
-    _parse_vo2_max,
+    _sync_heart_rate,
+    _sync_hrv,
+    _sync_skin_temperature,
+    _sync_sleep,
+    _sync_spo2,
+    _sync_weight,
     run_sync,
 )
-from fitbit_mcp import db
 
 
 class TestChunkDateRanges:
@@ -49,7 +46,7 @@ class TestChunkDateRanges:
         assert len(ranges) >= 12
         # Check no gaps
         for i in range(1, len(ranges)):
-            assert ranges[i][0] == ranges[i-1][1] + timedelta(days=1)
+            assert ranges[i][0] == ranges[i - 1][1] + timedelta(days=1)
 
     def test_single_day(self):
         ranges = _chunk_date_ranges(date(2026, 3, 15), date(2026, 3, 15), max_days=30)
@@ -102,9 +99,12 @@ class TestSyncActivity:
     def test_basic_sync(self, mock_get, tmp_db):
         mock_get.return_value = {
             "summary": {
-                "steps": 9500, "caloriesOut": 2300,
-                "veryActiveMinutes": 25, "fairlyActiveMinutes": 10,
-                "lightlyActiveMinutes": 180, "sedentaryMinutes": 580,
+                "steps": 9500,
+                "caloriesOut": 2300,
+                "veryActiveMinutes": 25,
+                "fairlyActiveMinutes": 10,
+                "lightlyActiveMinutes": 180,
+                "sedentaryMinutes": 580,
                 "floors": 6,
                 "distances": [{"distance": 6.8}],
             }
@@ -140,6 +140,7 @@ class TestSyncActivity:
     def test_rate_limit_retry(self, mock_get, mock_sleep, tmp_db):
         """On 429, sync sleeps then retries the same day."""
         from fitbit_mcp.api import FitbitRateLimitError
+
         ok_response = {"summary": {"steps": 8000, "distances": [{"distance": 5.0}]}}
         mock_get.side_effect = [FitbitRateLimitError(60), ok_response]
 
@@ -161,12 +162,14 @@ class TestSyncSleep:
                     "efficiency": 91,
                     "startTime": "2026-03-14T23:00:00",
                     "endTime": "2026-03-15T06:00:00",
-                    "levels": {"summary": {
-                        "deep": {"minutes": 60},
-                        "light": {"minutes": 200},
-                        "rem": {"minutes": 100},
-                        "wake": {"minutes": 60},
-                    }},
+                    "levels": {
+                        "summary": {
+                            "deep": {"minutes": 60},
+                            "light": {"minutes": 200},
+                            "rem": {"minutes": 100},
+                            "wake": {"minutes": 60},
+                        }
+                    },
                 },
             ]
         }
@@ -370,7 +373,9 @@ class TestSyncCardioFitness:
 
     @patch("fitbit_mcp.tools.sync_tools.api.get")
     def test_skips_unparseable(self, mock_get, tmp_db):
-        mock_get.return_value = {"cardioScore": [{"dateTime": "2026-03-15", "value": {"vo2Max": "??"}}]}
+        mock_get.return_value = {
+            "cardioScore": [{"dateTime": "2026-03-15", "value": {"vo2Max": "??"}}]
+        }
         count = _sync_cardio_fitness(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
         assert count == 0
 
@@ -452,6 +457,7 @@ class TestRunSync:
     @patch("fitbit_mcp.tools.sync_tools.db.get_db")
     def test_auth_error_handled(self, mock_get_db, mock_api_get, tmp_db):
         from fitbit_mcp.api import FitbitAuthError
+
         mock_get_db.return_value = tmp_db
         mock_api_get.side_effect = FitbitAuthError("expired")
 
@@ -462,6 +468,7 @@ class TestRunSync:
     @patch("fitbit_mcp.tools.sync_tools.db.get_db")
     def test_rate_limit_handled(self, mock_get_db, mock_api_get, tmp_db):
         from fitbit_mcp.api import FitbitRateLimitError
+
         mock_get_db.return_value = tmp_db
         mock_api_get.side_effect = FitbitRateLimitError(300)
 
@@ -473,13 +480,16 @@ class TestRunSync:
     def test_records_last_date_attempted(self, mock_get_db, mock_api_get, tmp_path):
         """Successful sync stores its end-date in sync_log.last_date_attempted."""
         from fitbit_mcp import db as db_mod
+
         db_path = tmp_path / "test.db"
         # Note: db.get_db is patched, so we can't call it through db_mod here.
         # Use sqlite3 directly to seed a real DB, then have the patched get_db
         # return that conn for run_sync; reopen afterwards to query.
         import sqlite3
+
         # First call: build a real DB by bypassing the patch
         from fitbit_mcp.db import SCHEMA, _migrate
+
         seed = sqlite3.connect(str(db_path))
         seed.row_factory = sqlite3.Row
         seed.executescript(SCHEMA)
@@ -501,6 +511,7 @@ class TestRunSync:
     def test_uses_attempted_date_to_skip_empty_days(self, mock_get_db, mock_api_get, tmp_db):
         """For sparse types, sync starts from last attempted date, not last data row."""
         from fitbit_mcp import db as db_mod
+
         mock_get_db.return_value = tmp_db
 
         # Simulate yesterday's run: data table has one old row, sync_log

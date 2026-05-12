@@ -8,8 +8,8 @@ from typing import Any
 
 from .config import FITBIT_CONFIG_PATH, FITBIT_TOKENS_PATH
 
-
 # --- Response formatting ---
+
 
 def format_response(result: Any) -> str:
     """JSON-serialize a result for MCP transport."""
@@ -70,12 +70,11 @@ def _parse_single_date(date_str: str | None, default: date, is_end: bool) -> dat
     if re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
         return date.fromisoformat(date_str)
 
-    raise ValueError(
-        f"Invalid date '{date_str}'. Use YYYY-MM-DD, YYYY-MM, or Nd (e.g. '30d')."
-    )
+    raise ValueError(f"Invalid date '{date_str}'. Use YYYY-MM-DD, YYYY-MM, or Nd (e.g. '30d').")
 
 
 # --- Formatting helpers ---
+
 
 def format_duration(minutes: int | float | None) -> str:
     """Convert minutes to human-readable duration."""
@@ -91,13 +90,18 @@ def format_duration(minutes: int | float | None) -> str:
 
 # --- Auth decorator ---
 
+
 def require_auth(func):
     """Decorator that checks credentials exist before calling a tool."""
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         if not FITBIT_CONFIG_PATH.exists() or not FITBIT_TOKENS_PATH.exists():
-            return json.dumps({
-                "error": "Fitbit not configured. Run: fitbit-mcp auth",
-            })
+            return json.dumps(
+                {
+                    "error": "Fitbit not configured. Run: fitbit-mcp auth",
+                }
+            )
         return await func(*args, **kwargs)
+
     return wrapper

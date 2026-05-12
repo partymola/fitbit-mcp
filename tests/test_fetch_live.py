@@ -6,24 +6,22 @@ response parsing, and deduplication logic.
 """
 
 from datetime import date
-from unittest.mock import call, patch
+from unittest.mock import patch
 
-import pytest
-
-from fitbit_mcp.tools.heart_tools import _fetch_live as heart_fetch_live
 from fitbit_mcp.tools.activity_tools import _fetch_live as activity_fetch_live
-from fitbit_mcp.tools.sleep_tools import _fetch_live as sleep_fetch_live
-from fitbit_mcp.tools.exercise_tools import _fetch_live as exercise_fetch_live
-from fitbit_mcp.tools.weight_tools import _fetch_live as weight_fetch_live
-from fitbit_mcp.tools.spo2_tools import _fetch_live as spo2_fetch_live
-from fitbit_mcp.tools.hrv_tools import _fetch_live as hrv_fetch_live
 from fitbit_mcp.tools.azm_tools import _fetch_live as azm_fetch_live
 from fitbit_mcp.tools.breathing_rate_tools import _fetch_live as breathing_rate_fetch_live
-from fitbit_mcp.tools.temperature_tools import _fetch_live as temperature_fetch_live
 from fitbit_mcp.tools.cardio_fitness_tools import _fetch_live as cardio_fitness_fetch_live
-from fitbit_mcp.tools.food_tools import _fetch_live as food_fetch_live
 from fitbit_mcp.tools.devices_tools import _fetch_devices
-from fitbit_mcp.tools.lifetime_stats_tools import _fetch_lifetime, _fetch_goals
+from fitbit_mcp.tools.exercise_tools import _fetch_live as exercise_fetch_live
+from fitbit_mcp.tools.food_tools import _fetch_live as food_fetch_live
+from fitbit_mcp.tools.heart_tools import _fetch_live as heart_fetch_live
+from fitbit_mcp.tools.hrv_tools import _fetch_live as hrv_fetch_live
+from fitbit_mcp.tools.lifetime_stats_tools import _fetch_goals, _fetch_lifetime
+from fitbit_mcp.tools.sleep_tools import _fetch_live as sleep_fetch_live
+from fitbit_mcp.tools.spo2_tools import _fetch_live as spo2_fetch_live
+from fitbit_mcp.tools.temperature_tools import _fetch_live as temperature_fetch_live
+from fitbit_mcp.tools.weight_tools import _fetch_live as weight_fetch_live
 
 
 class TestHeartFetchLive:
@@ -71,9 +69,12 @@ class TestActivityFetchLive:
     def test_returns_one_entry_per_day(self, mock_get):
         mock_get.return_value = {
             "summary": {
-                "steps": 9000, "caloriesOut": 2400,
-                "veryActiveMinutes": 20, "fairlyActiveMinutes": 15,
-                "lightlyActiveMinutes": 180, "sedentaryMinutes": 600,
+                "steps": 9000,
+                "caloriesOut": 2400,
+                "veryActiveMinutes": 20,
+                "fairlyActiveMinutes": 15,
+                "lightlyActiveMinutes": 180,
+                "sedentaryMinutes": 600,
                 "floors": 8,
                 "distances": [{"activity": "total", "distance": 6.5}],
             }
@@ -93,9 +94,12 @@ class TestActivityFetchLive:
     def test_entry_fields(self, mock_get):
         mock_get.return_value = {
             "summary": {
-                "steps": 10000, "caloriesOut": 2500,
-                "veryActiveMinutes": 30, "fairlyActiveMinutes": 20,
-                "lightlyActiveMinutes": 200, "sedentaryMinutes": 500,
+                "steps": 10000,
+                "caloriesOut": 2500,
+                "veryActiveMinutes": 30,
+                "fairlyActiveMinutes": 20,
+                "lightlyActiveMinutes": 200,
+                "sedentaryMinutes": 500,
                 "floors": 10,
                 "distances": [{"distance": 7.0}],
             }
@@ -126,12 +130,14 @@ class TestSleepFetchLive:
                     "efficiency": 91,
                     "startTime": "2026-03-14T23:00:00",
                     "endTime": "2026-03-15T06:00:00",
-                    "levels": {"summary": {
-                        "deep": {"minutes": 80},
-                        "light": {"minutes": 200},
-                        "rem": {"minutes": 100},
-                        "wake": {"minutes": 40},
-                    }},
+                    "levels": {
+                        "summary": {
+                            "deep": {"minutes": 80},
+                            "light": {"minutes": 200},
+                            "rem": {"minutes": 100},
+                            "wake": {"minutes": 40},
+                        }
+                    },
                 }
             ]
         }
@@ -147,14 +153,18 @@ class TestSleepFetchLive:
         mock_get.return_value = {
             "sleep": [
                 {
-                    "dateOfSleep": "2026-03-15", "minutesAsleep": 300,
-                    "efficiency": 85, "startTime": "2026-03-15T01:00:00",
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 300,
+                    "efficiency": 85,
+                    "startTime": "2026-03-15T01:00:00",
                     "endTime": "2026-03-15T06:00:00",
                     "levels": {"summary": {}},
                 },
                 {
-                    "dateOfSleep": "2026-03-15", "minutesAsleep": 420,
-                    "efficiency": 91, "startTime": "2026-03-14T23:00:00",
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 420,
+                    "efficiency": 91,
+                    "startTime": "2026-03-14T23:00:00",
                     "endTime": "2026-03-15T06:00:00",
                     "levels": {"summary": {}},
                 },
@@ -187,10 +197,14 @@ class TestExerciseFetchLive:
             {
                 "activities": [
                     {
-                        "logId": 1, "startTime": "2026-03-15T07:30:00",
-                        "activityName": "Cycling", "activeDuration": 1800000,
-                        "calories": 300, "averageHeartRate": 130,
-                        "distance": 8.0, "source": {"name": "Tracker"},
+                        "logId": 1,
+                        "startTime": "2026-03-15T07:30:00",
+                        "activityName": "Cycling",
+                        "activeDuration": 1800000,
+                        "calories": 300,
+                        "averageHeartRate": 130,
+                        "distance": 8.0,
+                        "source": {"name": "Tracker"},
                         "logType": "auto_detected",
                     },
                 ]
@@ -208,10 +222,24 @@ class TestExerciseFetchLive:
         mock_get.side_effect = [
             {
                 "activities": [
-                    {"logId": 1, "startTime": "2026-03-15T07:00:00", "activityName": "Cycling",
-                     "activeDuration": 1800000, "calories": 300, "source": None, "logType": "auto"},
-                    {"logId": 2, "startTime": "2026-03-15T18:00:00", "activityName": "Walk",
-                     "activeDuration": 2700000, "calories": 200, "source": None, "logType": "auto"},
+                    {
+                        "logId": 1,
+                        "startTime": "2026-03-15T07:00:00",
+                        "activityName": "Cycling",
+                        "activeDuration": 1800000,
+                        "calories": 300,
+                        "source": None,
+                        "logType": "auto",
+                    },
+                    {
+                        "logId": 2,
+                        "startTime": "2026-03-15T18:00:00",
+                        "activityName": "Walk",
+                        "activeDuration": 2700000,
+                        "calories": 200,
+                        "source": None,
+                        "logType": "auto",
+                    },
                 ]
             },
             {"activities": []},
@@ -225,8 +253,15 @@ class TestExerciseFetchLive:
         """Entries past end_date are not returned and pagination stops."""
         mock_get.return_value = {
             "activities": [
-                {"logId": 1, "startTime": "2026-04-01T07:00:00", "activityName": "Walk",
-                 "activeDuration": 1800000, "calories": 200, "source": None, "logType": "auto"},
+                {
+                    "logId": 1,
+                    "startTime": "2026-04-01T07:00:00",
+                    "activityName": "Walk",
+                    "activeDuration": 1800000,
+                    "calories": 200,
+                    "source": None,
+                    "logType": "auto",
+                },
             ]
         }
         result = exercise_fetch_live(date(2026, 3, 1), date(2026, 3, 31), None)
@@ -351,10 +386,15 @@ class TestAzmFetchLive:
     def test_returns_entries(self, mock_get):
         mock_get.return_value = {
             "activities-active-zone-minutes": [
-                {"dateTime": "2026-03-15", "value": {
-                    "activeZoneMinutes": 42, "fatBurnActiveZoneMinutes": 25,
-                    "cardioActiveZoneMinutes": 12, "peakActiveZoneMinutes": 5,
-                }},
+                {
+                    "dateTime": "2026-03-15",
+                    "value": {
+                        "activeZoneMinutes": 42,
+                        "fatBurnActiveZoneMinutes": 25,
+                        "cardioActiveZoneMinutes": 12,
+                        "peakActiveZoneMinutes": 5,
+                    },
+                },
             ]
         }
         result = azm_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
@@ -453,9 +493,14 @@ class TestDevicesFetch:
     def test_returns_devices(self, mock_get):
         mock_get.return_value = [
             {
-                "id": "abc123", "type": "TRACKER", "deviceVersion": "Charge 6",
-                "battery": "High", "batteryLevel": 88, "lastSyncTime": "2026-05-03T07:00:00",
-                "mac": "AA:BB:CC:DD:EE:FF", "features": [],
+                "id": "abc123",
+                "type": "TRACKER",
+                "deviceVersion": "Charge 6",
+                "battery": "High",
+                "batteryLevel": 88,
+                "lastSyncTime": "2026-05-03T07:00:00",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "features": [],
             }
         ]
         result = _fetch_devices()
@@ -475,8 +520,20 @@ class TestLifetimeStatsFetch:
     def test_returns_lifetime(self, mock_get):
         mock_get.return_value = {
             "lifetime": {
-                "total": {"steps": 12345678, "distance": 9876.5, "floors": 1500, "caloriesOut": 0, "activeScore": -1},
-                "tracker": {"steps": 12345678, "distance": 9876.5, "floors": 1500, "caloriesOut": 0, "activeScore": -1},
+                "total": {
+                    "steps": 12345678,
+                    "distance": 9876.5,
+                    "floors": 1500,
+                    "caloriesOut": 0,
+                    "activeScore": -1,
+                },
+                "tracker": {
+                    "steps": 12345678,
+                    "distance": 9876.5,
+                    "floors": 1500,
+                    "caloriesOut": 0,
+                    "activeScore": -1,
+                },
             },
             "best": {
                 "total": {"steps": {"date": "2026-03-15", "value": 25000}},
@@ -492,7 +549,13 @@ class TestGoalsFetch:
     @patch("fitbit_mcp.tools.lifetime_stats_tools.api.get")
     def test_returns_goals(self, mock_get):
         mock_get.return_value = {
-            "goals": {"steps": 10000, "distance": 8.0, "floors": 10, "caloriesOut": 2500, "activeMinutes": 30}
+            "goals": {
+                "steps": 10000,
+                "distance": 8.0,
+                "floors": 10,
+                "caloriesOut": 2500,
+                "activeMinutes": 30,
+            }
         }
         result = _fetch_goals("daily")
         assert result["steps"] == 10000

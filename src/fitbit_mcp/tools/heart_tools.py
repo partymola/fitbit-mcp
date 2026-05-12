@@ -4,15 +4,16 @@ from datetime import timedelta
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth, parse_date
 from .. import api, db
+from ..helpers import format_response, parse_date, require_auth
+from ..mcp_instance import mcp
 from .sync_tools import auto_sync_if_stale
 
 
 def _fetch_live(start_date, end_date) -> list[dict]:
     """Fetch heart rate data directly from the API."""
     from ..config import MAX_RANGE_DAYS
+
     results = []
     d = start_date
     while d <= end_date:
@@ -21,11 +22,13 @@ def _fetch_live(start_date, end_date) -> list[dict]:
         data = api.get(path)
         for entry in data.get("activities-heart", []):
             value = entry.get("value", {})
-            results.append({
-                "date": entry["dateTime"],
-                "resting_hr": value.get("restingHeartRate"),
-                "zones": value.get("heartRateZones", []),
-            })
+            results.append(
+                {
+                    "date": entry["dateTime"],
+                    "resting_hr": value.get("restingHeartRate"),
+                    "zones": value.get("heartRateZones", []),
+                }
+            )
         d = chunk_end + timedelta(days=1)
     return results
 
@@ -57,17 +60,21 @@ async def fitbit_get_heart_rate(
         entries = await anyio.to_thread.run_sync(lambda: _fetch_live(start, end))
     else:
         await anyio.to_thread.run_sync(lambda: auto_sync_if_stale("heart_rate"))
+
         def _query():
             conn = db.get_db()
             rows = db.query_heart_rate(conn, start.isoformat(), end.isoformat())
             conn.close()
             return rows
+
         entries = await anyio.to_thread.run_sync(_query)
 
     if not entries:
-        return format_response({
-            "message": "No heart rate data found for this period.",
-            "hint": "Try live=True to fetch directly from the API.",
-        })
+        return format_response(
+            {
+                "message": "No heart rate data found for this period.",
+                "hint": "Try live=True to fetch directly from the API.",
+            }
+        )
 
     return format_response({"heart_rate": entries, "count": len(entries)})

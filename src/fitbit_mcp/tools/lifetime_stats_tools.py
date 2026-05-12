@@ -2,9 +2,9 @@
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth
 from .. import api
+from ..helpers import format_response, require_auth
+from ..mcp_instance import mcp
 
 
 def _fetch_lifetime() -> dict:

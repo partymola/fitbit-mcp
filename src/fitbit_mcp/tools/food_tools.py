@@ -4,10 +4,10 @@ from datetime import timedelta
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth, parse_date
 from .. import api, db
-from .sync_tools import auto_sync_if_stale, _has_food_log
+from ..helpers import format_response, parse_date, require_auth
+from ..mcp_instance import mcp
+from .sync_tools import _has_food_log, auto_sync_if_stale
 
 
 def _fetch_live(start_date, end_date) -> list[dict]:
@@ -23,11 +23,13 @@ def _fetch_live(start_date, end_date) -> list[dict]:
         data = api.get(path)
         if _has_food_log(data):
             summary = data.get("summary", {}) or {}
-            results.append({
-                "date": d.isoformat(),
-                "calories_in": summary.get("calories"),
-                "water_ml": summary.get("water"),
-            })
+            results.append(
+                {
+                    "date": d.isoformat(),
+                    "calories_in": summary.get("calories"),
+                    "water_ml": summary.get("water"),
+                }
+            )
         d += timedelta(days=1)
     return results
 
@@ -59,17 +61,21 @@ async def fitbit_get_food_log(
         entries = await anyio.to_thread.run_sync(lambda: _fetch_live(start, end))
     else:
         await anyio.to_thread.run_sync(lambda: auto_sync_if_stale("food_log"))
+
         def _query():
             conn = db.get_db()
             rows = db.query_food_log(conn, start.isoformat(), end.isoformat())
             conn.close()
             return rows
+
         entries = await anyio.to_thread.run_sync(_query)
 
     if not entries:
-        return format_response({
-            "message": "No food log data found for this period.",
-            "hint": "User must log food/water in the Fitbit app for data to appear.",
-        })
+        return format_response(
+            {
+                "message": "No food log data found for this period.",
+                "hint": "User must log food/water in the Fitbit app for data to appear.",
+            }
+        )
 
     return format_response({"food_log": entries, "count": len(entries)})

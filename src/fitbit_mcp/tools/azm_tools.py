@@ -4,15 +4,16 @@ from datetime import timedelta
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth, parse_date
 from .. import api, db
+from ..helpers import format_response, parse_date, require_auth
+from ..mcp_instance import mcp
 from .sync_tools import auto_sync_if_stale
 
 
 def _fetch_live(start_date, end_date) -> list[dict]:
     """Fetch AZM data directly from the API."""
     from ..config import AZM_MAX_RANGE_DAYS
+
     results = {}
     d = start_date
     while d <= end_date:
@@ -64,17 +65,21 @@ async def fitbit_get_azm(
         entries = await anyio.to_thread.run_sync(lambda: _fetch_live(start, end))
     else:
         await anyio.to_thread.run_sync(lambda: auto_sync_if_stale("azm"))
+
         def _query():
             conn = db.get_db()
             rows = db.query_azm(conn, start.isoformat(), end.isoformat())
             conn.close()
             return rows
+
         entries = await anyio.to_thread.run_sync(_query)
 
     if not entries:
-        return format_response({
-            "message": "No AZM data found for this period.",
-            "hint": "Try live=True to fetch directly from the API.",
-        })
+        return format_response(
+            {
+                "message": "No AZM data found for this period.",
+                "hint": "Try live=True to fetch directly from the API.",
+            }
+        )
 
     return format_response({"azm": entries, "count": len(entries)})
