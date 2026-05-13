@@ -4,15 +4,16 @@ from datetime import timedelta
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth, parse_date
 from .. import api, db
+from ..helpers import format_response, parse_date, require_auth
+from ..mcp_instance import mcp
 from .sync_tools import auto_sync_if_stale
 
 
 def _fetch_live(start_date, end_date) -> list[dict]:
     """Fetch skin temperature data directly from the API."""
     from ..config import SKIN_TEMPERATURE_MAX_RANGE_DAYS
+
     results = {}
     d = start_date
     while d <= end_date:
@@ -60,17 +61,24 @@ async def fitbit_get_temperature(
         entries = await anyio.to_thread.run_sync(lambda: _fetch_live(start, end))
     else:
         await anyio.to_thread.run_sync(lambda: auto_sync_if_stale("skin_temperature"))
+
         def _query():
             conn = db.get_db()
             rows = db.query_skin_temperature(conn, start.isoformat(), end.isoformat())
             conn.close()
             return rows
+
         entries = await anyio.to_thread.run_sync(_query)
 
     if not entries:
-        return format_response({
-            "message": "No skin temperature data found for this period.",
-            "hint": "Try live=True to fetch directly from the API. Requires sleep tracking and baseline.",
-        })
+        return format_response(
+            {
+                "message": "No skin temperature data found for this period.",
+                "hint": (
+                    "Try live=True to fetch directly from the API. "
+                    "Requires sleep tracking and baseline."
+                ),
+            }
+        )
 
     return format_response({"skin_temperature": entries, "count": len(entries)})

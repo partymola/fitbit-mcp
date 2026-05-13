@@ -2,9 +2,9 @@
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth, parse_date
 from .. import api, db
+from ..helpers import format_response, parse_date, require_auth
+from ..mcp_instance import mcp
 from .sync_tools import auto_sync_if_stale
 
 
@@ -29,18 +29,20 @@ def _fetch_live(start_date, end_date, exercise_type: str | None) -> list[dict]:
             name = entry.get("activityName", "")
             if exercise_type and exercise_type.lower() not in name.lower():
                 continue
-            results.append({
-                "date": log_date,
-                "name": name,
-                "duration_min": (entry.get("activeDuration") or 0) // 60000,
-                "calories": entry.get("calories"),
-                "avg_hr": entry.get("averageHeartRate"),
-                "steps": entry.get("steps"),
-                "distance_km": entry.get("distance"),
-                "start_time": entry.get("startTime"),
-                "source": (entry.get("source") or {}).get("name"),
-                "log_type": entry.get("logType"),
-            })
+            results.append(
+                {
+                    "date": log_date,
+                    "name": name,
+                    "duration_min": (entry.get("activeDuration") or 0) // 60000,
+                    "calories": entry.get("calories"),
+                    "avg_hr": entry.get("averageHeartRate"),
+                    "steps": entry.get("steps"),
+                    "distance_km": entry.get("distance"),
+                    "start_time": entry.get("startTime"),
+                    "source": (entry.get("source") or {}).get("name"),
+                    "log_type": entry.get("logType"),
+                }
+            )
 
         if done:
             break
@@ -82,17 +84,21 @@ async def fitbit_get_exercises(
         entries = await anyio.to_thread.run_sync(lambda: _fetch_live(start, end, exercise_type))
     else:
         await anyio.to_thread.run_sync(lambda: auto_sync_if_stale("exercises"))
+
         def _query():
             conn = db.get_db()
             rows = db.query_exercises(conn, start.isoformat(), end.isoformat(), exercise_type)
             conn.close()
             return rows
+
         entries = await anyio.to_thread.run_sync(_query)
 
     if not entries:
-        return format_response({
-            "message": "No exercise entries found for this period.",
-            "hint": "Try live=True to fetch directly from the API.",
-        })
+        return format_response(
+            {
+                "message": "No exercise entries found for this period.",
+                "hint": "Try live=True to fetch directly from the API.",
+            }
+        )
 
     return format_response({"exercises": entries, "count": len(entries)})

@@ -32,7 +32,8 @@ def run_import(data_dir: Path):
             if ds.startswith("_"):
                 continue
             db.save_heart_rate(
-                conn, ds,
+                conn,
+                ds,
                 entry.get("resting_hr"),
                 entry.get("heart_rate_zones", []),
             )
@@ -52,18 +53,21 @@ def run_import(data_dir: Path):
         for ds, entry in data.items():
             if ds.startswith("_"):
                 continue
-            db.save_activity(conn, {
-                "date": ds,
-                "steps": entry.get("steps"),
-                "calories_out": entry.get("calories_out"),
-                "active_minutes": entry.get("active_minutes"),
-                "very_active_minutes": entry.get("very_active_minutes"),
-                "fairly_active_minutes": entry.get("fairly_active_minutes"),
-                "lightly_active_minutes": entry.get("lightly_active_minutes"),
-                "sedentary_minutes": entry.get("sedentary_minutes"),
-                "floors": entry.get("floors"),
-                "distance_km": entry.get("distance_km"),
-            })
+            db.save_activity(
+                conn,
+                {
+                    "date": ds,
+                    "steps": entry.get("steps"),
+                    "calories_out": entry.get("calories_out"),
+                    "active_minutes": entry.get("active_minutes"),
+                    "very_active_minutes": entry.get("very_active_minutes"),
+                    "fairly_active_minutes": entry.get("fairly_active_minutes"),
+                    "lightly_active_minutes": entry.get("lightly_active_minutes"),
+                    "sedentary_minutes": entry.get("sedentary_minutes"),
+                    "floors": entry.get("floors"),
+                    "distance_km": entry.get("distance_km"),
+                },
+            )
             count += 1
         conn.commit()
         db.log_sync(conn, "activity", "import", count, f"imported from {act_file}")
@@ -80,19 +84,23 @@ def run_import(data_dir: Path):
         for log_id, entry in data.items():
             if log_id.startswith("_"):
                 continue
-            db.save_exercise(conn, log_id, {
-                "date": entry.get("date", ""),
-                "name": entry.get("name"),
-                "duration_min": entry.get("duration_min"),
-                "calories": entry.get("calories"),
-                "avg_hr": entry.get("avg_hr"),
-                "steps": entry.get("steps"),
-                "distance_km": entry.get("distance_km"),
-                "distance_unit": entry.get("distance_unit"),
-                "start_time": entry.get("start_time"),
-                "source": entry.get("source"),
-                "log_type": entry.get("log_type"),
-            })
+            db.save_exercise(
+                conn,
+                log_id,
+                {
+                    "date": entry.get("date", ""),
+                    "name": entry.get("name"),
+                    "duration_min": entry.get("duration_min"),
+                    "calories": entry.get("calories"),
+                    "avg_hr": entry.get("avg_hr"),
+                    "steps": entry.get("steps"),
+                    "distance_km": entry.get("distance_km"),
+                    "distance_unit": entry.get("distance_unit"),
+                    "start_time": entry.get("start_time"),
+                    "source": entry.get("source"),
+                    "log_type": entry.get("log_type"),
+                },
+            )
             count += 1
         conn.commit()
         db.log_sync(conn, "exercises", "import", count, f"imported from {ex_file}")
@@ -109,17 +117,20 @@ def run_import(data_dir: Path):
         for ds, entry in data.items():
             if ds.startswith("_"):
                 continue
-            db.save_sleep(conn, {
-                "date": ds,
-                "total_minutes": entry.get("total_minutes"),
-                "efficiency": entry.get("efficiency"),
-                "start_time": entry.get("start_time"),
-                "end_time": entry.get("end_time"),
-                "deep_minutes": entry.get("deep_minutes"),
-                "light_minutes": entry.get("light_minutes"),
-                "rem_minutes": entry.get("rem_minutes"),
-                "wake_minutes": entry.get("wake_minutes"),
-            })
+            db.save_sleep(
+                conn,
+                {
+                    "date": ds,
+                    "total_minutes": entry.get("total_minutes"),
+                    "efficiency": entry.get("efficiency"),
+                    "start_time": entry.get("start_time"),
+                    "end_time": entry.get("end_time"),
+                    "deep_minutes": entry.get("deep_minutes"),
+                    "light_minutes": entry.get("light_minutes"),
+                    "rem_minutes": entry.get("rem_minutes"),
+                    "wake_minutes": entry.get("wake_minutes"),
+                },
+            )
             count += 1
         conn.commit()
         db.log_sync(conn, "sleep", "import", count, f"imported from {sleep_file}")
@@ -136,12 +147,15 @@ def run_import(data_dir: Path):
         for ds, entry in data.items():
             if ds.startswith("_"):
                 continue
-            db.save_weight(conn, {
-                "date": ds,
-                "weight_kg": entry.get("weight_kg"),
-                "bmi": entry.get("bmi"),
-                "fat_pct": entry.get("fat_pct"),
-            })
+            db.save_weight(
+                conn,
+                {
+                    "date": ds,
+                    "weight_kg": entry.get("weight_kg"),
+                    "bmi": entry.get("bmi"),
+                    "fat_pct": entry.get("fat_pct"),
+                },
+            )
             count += 1
         conn.commit()
         db.log_sync(conn, "weight", "import", count, f"imported from {weight_file}")
@@ -158,12 +172,15 @@ def run_import(data_dir: Path):
         for ds, entry in data.items():
             if ds.startswith("_"):
                 continue
-            db.save_spo2(conn, {
-                "date": ds,
-                "avg": entry.get("avg"),
-                "min": entry.get("min"),
-                "max": entry.get("max"),
-            })
+            db.save_spo2(
+                conn,
+                {
+                    "date": ds,
+                    "avg": entry.get("avg"),
+                    "min": entry.get("min"),
+                    "max": entry.get("max"),
+                },
+            )
             count += 1
         conn.commit()
         db.log_sync(conn, "spo2", "import", count, f"imported from {spo2_file}")
@@ -180,11 +197,14 @@ def run_import(data_dir: Path):
         for ds, entry in data.items():
             if ds.startswith("_"):
                 continue
-            db.save_hrv(conn, {
-                "date": ds,
-                "daily_rmssd": entry.get("daily_rmssd"),
-                "deep_rmssd": entry.get("deep_rmssd"),
-            })
+            db.save_hrv(
+                conn,
+                {
+                    "date": ds,
+                    "daily_rmssd": entry.get("daily_rmssd"),
+                    "deep_rmssd": entry.get("deep_rmssd"),
+                },
+            )
             count += 1
         conn.commit()
         db.log_sync(conn, "hrv", "import", count, f"imported from {hrv_file}")

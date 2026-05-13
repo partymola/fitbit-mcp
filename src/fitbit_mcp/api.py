@@ -11,7 +11,6 @@ even though distance stays in km.
 
 import json
 import logging
-import time
 import urllib.error
 import urllib.request
 
@@ -27,6 +26,7 @@ class FitbitAuthError(Exception):
 
 class FitbitRateLimitError(Exception):
     """Rate limited (429). Retry after reset seconds."""
+
     def __init__(self, reset_seconds: int = 3600):
         self.reset_seconds = reset_seconds
         super().__init__(f"Rate limited. Retry in {reset_seconds}s.")
@@ -50,10 +50,13 @@ def get(path: str, retries: int = 3) -> dict:
     for attempt in range(retries):
         token = refresh_token()
         url = f"{FITBIT_API_BASE}{path}"
-        req = urllib.request.Request(url, headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json",
-        })
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+            },
+        )
 
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -64,6 +67,7 @@ def get(path: str, retries: int = 3) -> dict:
                 if attempt < retries - 1:
                     logger.info("Token expired (401), refreshing")
                     from . import auth
+
                     auth.invalidate_token_cache()
                     continue
                 raise FitbitAuthError("Authentication failed after retry. Run: fitbit-mcp auth")
@@ -80,6 +84,6 @@ def get(path: str, retries: int = 3) -> dict:
             raise FitbitAPIError(f"API error {e.code} for {path}: {body}")
 
         except urllib.error.URLError as e:
-            raise FitbitAPIError(f"Network error. Check your connection.") from e
+            raise FitbitAPIError("Network error. Check your connection.") from e
 
     raise FitbitAuthError("Authentication failed after retry. Run: fitbit-mcp auth")

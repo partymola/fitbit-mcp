@@ -140,6 +140,7 @@ def get_db(db_path: Path | str | None = None) -> sqlite3.Connection:
 
 # --- Save helpers ---
 
+
 def save_heart_rate(conn: sqlite3.Connection, date: str, resting_hr: int | None, zones: list):
     conn.execute(
         "INSERT OR REPLACE INTO heart_rate (date, resting_hr, zones) VALUES (?, ?, ?)",
@@ -184,7 +185,9 @@ def save_sleep(conn: sqlite3.Connection, row: dict):
 
 def save_weight(conn: sqlite3.Connection, row: dict):
     conn.execute(
-        "INSERT OR REPLACE INTO weight (date, weight_kg, bmi, fat_pct) VALUES (:date, :weight_kg, :bmi, :fat_pct)",
+        """INSERT OR REPLACE INTO weight
+        (date, weight_kg, bmi, fat_pct)
+        VALUES (:date, :weight_kg, :bmi, :fat_pct)""",
         row,
     )
 
@@ -198,7 +201,9 @@ def save_spo2(conn: sqlite3.Connection, row: dict):
 
 def save_hrv(conn: sqlite3.Connection, row: dict):
     conn.execute(
-        "INSERT OR REPLACE INTO hrv (date, daily_rmssd, deep_rmssd) VALUES (:date, :daily_rmssd, :deep_rmssd)",
+        """INSERT OR REPLACE INTO hrv
+        (date, daily_rmssd, deep_rmssd)
+        VALUES (:date, :daily_rmssd, :deep_rmssd)""",
         row,
     )
 
@@ -214,7 +219,9 @@ def save_azm(conn: sqlite3.Connection, row: dict):
 
 def save_breathing_rate(conn: sqlite3.Connection, row: dict):
     conn.execute(
-        "INSERT OR REPLACE INTO breathing_rate (date, breaths_per_min) VALUES (:date, :breaths_per_min)",
+        """INSERT OR REPLACE INTO breathing_rate
+        (date, breaths_per_min)
+        VALUES (:date, :breaths_per_min)""",
         row,
     )
 
@@ -237,20 +244,33 @@ def save_cardio_fitness(conn: sqlite3.Connection, row: dict):
 
 def save_food_log(conn: sqlite3.Connection, row: dict):
     conn.execute(
-        "INSERT OR REPLACE INTO food_log (date, calories_in, water_ml) VALUES (:date, :calories_in, :water_ml)",
+        """INSERT OR REPLACE INTO food_log
+        (date, calories_in, water_ml)
+        VALUES (:date, :calories_in, :water_ml)""",
         row,
     )
 
 
-def log_sync(conn: sqlite3.Connection, data_type: str, status: str,
-             records_added: int = 0, notes: str = "",
-             last_date_attempted: str | None = None):
+def log_sync(
+    conn: sqlite3.Connection,
+    data_type: str,
+    status: str,
+    records_added: int = 0,
+    notes: str = "",
+    last_date_attempted: str | None = None,
+):
     conn.execute(
         """INSERT INTO sync_log
             (synced_at, data_type, status, records_added, notes, last_date_attempted)
         VALUES (?, ?, ?, ?, ?, ?)""",
-        (datetime.now(timezone.utc).isoformat(), data_type, status, records_added,
-         notes, last_date_attempted),
+        (
+            datetime.now(timezone.utc).isoformat(),
+            data_type,
+            status,
+            records_added,
+            notes,
+            last_date_attempted,
+        ),
     )
     conn.commit()
 
@@ -304,14 +324,14 @@ def get_last_attempted_date(conn: sqlite3.Connection, data_type: str) -> str | N
     every empty day forever.
     """
     row = conn.execute(
-        "SELECT MAX(last_date_attempted) AS d FROM sync_log "
-        "WHERE data_type = ? AND status = 'ok'",
+        "SELECT MAX(last_date_attempted) AS d FROM sync_log WHERE data_type = ? AND status = 'ok'",
         (data_type,),
     ).fetchone()
     return row["d"] if row and row["d"] else None
 
 
 # --- Query helpers ---
+
 
 def _rows_to_dicts(rows) -> list[dict]:
     result = []
@@ -343,11 +363,13 @@ def query_activity(conn: sqlite3.Connection, start_date: str, end_date: str) -> 
     return _rows_to_dicts(rows)
 
 
-def query_exercises(conn: sqlite3.Connection, start_date: str, end_date: str,
-                    exercise_type: str | None = None) -> list[dict]:
+def query_exercises(
+    conn: sqlite3.Connection, start_date: str, end_date: str, exercise_type: str | None = None
+) -> list[dict]:
     if exercise_type:
         rows = conn.execute(
-            "SELECT * FROM exercises WHERE date >= ? AND date <= ? AND LOWER(name) LIKE ? ORDER BY date, start_time",
+            "SELECT * FROM exercises WHERE date >= ? AND date <= ? "
+            "AND LOWER(name) LIKE ? ORDER BY date, start_time",
             (start_date, end_date, f"%{exercise_type.lower()}%"),
         ).fetchall()
     else:

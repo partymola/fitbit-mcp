@@ -2,9 +2,9 @@
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth
 from .. import api
+from ..helpers import format_response, require_auth
+from ..mcp_instance import mcp
 
 
 def _fetch_devices() -> list[dict]:
@@ -14,16 +14,18 @@ def _fetch_devices() -> list[dict]:
         return []
     devices = []
     for entry in data:
-        devices.append({
-            "id": entry.get("id"),
-            "type": entry.get("type"),
-            "device_version": entry.get("deviceVersion"),
-            "battery": entry.get("battery"),
-            "battery_level": entry.get("batteryLevel"),
-            "last_sync_time": entry.get("lastSyncTime"),
-            "mac": entry.get("mac"),
-            "features": entry.get("features", []),
-        })
+        devices.append(
+            {
+                "id": entry.get("id"),
+                "type": entry.get("type"),
+                "device_version": entry.get("deviceVersion"),
+                "battery": entry.get("battery"),
+                "battery_level": entry.get("batteryLevel"),
+                "last_sync_time": entry.get("lastSyncTime"),
+                "mac": entry.get("mac"),
+                "features": entry.get("features", []),
+            }
+        )
     return devices
 
 

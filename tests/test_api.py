@@ -1,12 +1,11 @@
 """Tests for the Fitbit API client."""
 
 import json
-from unittest.mock import patch, MagicMock
-from http.client import HTTPResponse
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fitbit_mcp.api import get, FitbitAuthError, FitbitRateLimitError, FitbitAPIError
+from fitbit_mcp.api import FitbitAPIError, FitbitAuthError, FitbitRateLimitError, get
 
 
 class TestAPIExceptions:
@@ -59,6 +58,7 @@ class TestAPIGet:
     @patch("fitbit_mcp.api.urllib.request.urlopen")
     def test_401_retries(self, mock_urlopen, mock_refresh, mock_invalidate):
         import urllib.error
+
         mock_refresh.return_value = "token"
 
         ok_response = MagicMock()
@@ -80,6 +80,7 @@ class TestAPIGet:
     @patch("fitbit_mcp.api.urllib.request.urlopen")
     def test_429_raises_rate_limit(self, mock_urlopen, mock_refresh):
         import urllib.error
+
         mock_refresh.return_value = "token"
 
         headers = {"Fitbit-Rate-Limit-Reset": "300"}
@@ -95,6 +96,7 @@ class TestAPIGet:
     @patch("fitbit_mcp.api.urllib.request.urlopen")
     def test_500_raises_api_error(self, mock_urlopen, mock_refresh):
         import urllib.error
+
         mock_refresh.return_value = "token"
 
         error = urllib.error.HTTPError("url", 500, "Internal Server Error", {}, None)
@@ -108,6 +110,7 @@ class TestAPIGet:
     @patch("fitbit_mcp.api.urllib.request.urlopen")
     def test_network_error(self, mock_urlopen, mock_refresh):
         import urllib.error
+
         mock_refresh.return_value = "token"
         mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
 
@@ -118,10 +121,9 @@ class TestAPIGet:
     @patch("fitbit_mcp.api.urllib.request.urlopen")
     def test_401_exhausts_retries(self, mock_urlopen, mock_refresh):
         import urllib.error
+
         mock_refresh.return_value = "token"
-        mock_urlopen.side_effect = urllib.error.HTTPError(
-            "url", 401, "Unauthorized", {}, None
-        )
+        mock_urlopen.side_effect = urllib.error.HTTPError("url", 401, "Unauthorized", {}, None)
 
         with pytest.raises(FitbitAuthError):
             get("/1/user/-/test.json", retries=2)

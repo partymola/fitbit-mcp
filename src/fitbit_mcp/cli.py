@@ -21,22 +21,24 @@ logging.basicConfig(
 
 # Import MCP instance and register all tools
 from .mcp_instance import mcp  # noqa: E402
-from .tools import sync_tools  # noqa: E402, F401
-from .tools import heart_tools  # noqa: E402, F401
-from .tools import activity_tools  # noqa: E402, F401
-from .tools import exercise_tools  # noqa: E402, F401
-from .tools import sleep_tools  # noqa: E402, F401
-from .tools import weight_tools  # noqa: E402, F401
-from .tools import spo2_tools  # noqa: E402, F401
-from .tools import hrv_tools  # noqa: E402, F401
-from .tools import azm_tools  # noqa: E402, F401
-from .tools import breathing_rate_tools  # noqa: E402, F401
-from .tools import temperature_tools  # noqa: E402, F401
-from .tools import cardio_fitness_tools  # noqa: E402, F401
-from .tools import food_tools  # noqa: E402, F401
-from .tools import devices_tools  # noqa: E402, F401
-from .tools import lifetime_stats_tools  # noqa: E402, F401
-from .tools import analysis_tools  # noqa: E402, F401
+from .tools import (  # noqa: E402
+    activity_tools,  # noqa: E402, F401
+    analysis_tools,  # noqa: E402, F401
+    azm_tools,  # noqa: E402, F401
+    breathing_rate_tools,  # noqa: E402, F401
+    cardio_fitness_tools,  # noqa: E402, F401
+    devices_tools,  # noqa: E402, F401
+    exercise_tools,  # noqa: E402, F401
+    food_tools,  # noqa: E402, F401
+    heart_tools,  # noqa: E402, F401
+    hrv_tools,  # noqa: E402, F401
+    lifetime_stats_tools,  # noqa: E402, F401
+    sleep_tools,  # noqa: E402, F401
+    spo2_tools,  # noqa: E402, F401
+    sync_tools,  # noqa: E402, F401
+    temperature_tools,  # noqa: E402, F401
+    weight_tools,  # noqa: E402, F401
+)
 
 
 def _version_text():
@@ -54,6 +56,7 @@ def main():
         return
 
     import argparse
+
     parser = argparse.ArgumentParser(
         prog="fitbit-mcp",
         description="Fitbit MCP server - serves Fitbit data via the Model Context Protocol.",
@@ -66,31 +69,49 @@ def main():
 
     sync_parser = subparsers.add_parser("sync", help="Sync Fitbit data to local SQLite cache")
     _add_version_argument(sync_parser)
-    sync_parser.add_argument("--days", type=int, default=30, help="Days of history for first sync (default: 30)")
     sync_parser.add_argument(
-        "--types", default="all",
+        "--days", type=int, default=30, help="Days of history for first sync (default: 30)"
+    )
+    sync_parser.add_argument(
+        "--types",
+        default="all",
         help=(
             "Comma-separated data types: all, heart_rate, activity, exercises, sleep, "
             "weight, spo2, hrv, azm, breathing_rate, skin_temperature, cardio_fitness, food_log"
         ),
     )
 
-    import_parser = subparsers.add_parser("import", help="Import existing Fitbit JSON data files into SQLite")
+    import_parser = subparsers.add_parser(
+        "import", help="Import existing Fitbit JSON data files into SQLite"
+    )
     _add_version_argument(import_parser)
-    import_parser.add_argument("--data-dir", required=True, help="Directory containing Fitbit JSON data files")
+    import_parser.add_argument(
+        "--data-dir", required=True, help="Directory containing Fitbit JSON data files"
+    )
 
     args = parser.parse_args()
 
     if args.cmd == "auth":
         from .auth import setup_auth
+
         setup_auth()
 
     elif args.cmd == "sync":
         types = [t.strip() for t in args.types.split(",")]
         if "all" in types:
             types = [
-                "heart_rate", "activity", "exercises", "sleep", "weight", "spo2", "hrv",
-                "azm", "breathing_rate", "skin_temperature", "cardio_fitness", "food_log",
+                "heart_rate",
+                "activity",
+                "exercises",
+                "sleep",
+                "weight",
+                "spo2",
+                "hrv",
+                "azm",
+                "breathing_rate",
+                "skin_temperature",
+                "cardio_fitness",
+                "food_log",
             ]
 
         print(f"Syncing: {', '.join(types)}")
@@ -104,7 +125,9 @@ def main():
 
     elif args.cmd == "import":
         from pathlib import Path
+
         from .importer import run_import
+
         run_import(Path(args.data_dir))
 
     else:

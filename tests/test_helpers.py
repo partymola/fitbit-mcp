@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from fitbit_mcp.helpers import parse_date, format_duration, format_response
+from fitbit_mcp.helpers import format_duration, format_response, parse_date
 
 
 class TestParseDate:

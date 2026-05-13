@@ -4,14 +4,13 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 
 class TestConfigDefaults:
     """Test default configuration values."""
 
     def test_default_paths_exist(self):
         from fitbit_mcp.config import CONFIG_DIR, DB_PATH
+
         # Defaults use XDG-compatible locations under the user home directory
         assert isinstance(CONFIG_DIR, Path)
         assert isinstance(DB_PATH, Path)
@@ -22,10 +21,15 @@ class TestConfigDefaults:
 
     def test_api_constants(self):
         from fitbit_mcp.config import (
-            FITBIT_API_BASE, FITBIT_AUTH_URL, FITBIT_TOKEN_URL,
-            FITBIT_SCOPES, FITBIT_CALLBACK_PORT, FITBIT_REDIRECT_URI,
+            FITBIT_API_BASE,
+            FITBIT_AUTH_URL,
+            FITBIT_CALLBACK_PORT,
             FITBIT_RATE_LIMIT,
+            FITBIT_REDIRECT_URI,
+            FITBIT_SCOPES,
+            FITBIT_TOKEN_URL,
         )
+
         assert FITBIT_API_BASE == "https://api.fitbit.com"
         assert "oauth2/authorize" in FITBIT_AUTH_URL
         assert "oauth2/token" in FITBIT_TOKEN_URL
@@ -38,11 +42,17 @@ class TestConfigDefaults:
 
     def test_range_limits(self):
         from fitbit_mcp.config import (
-            MAX_RANGE_DAYS, SLEEP_MAX_RANGE_DAYS,
-            WEIGHT_MAX_RANGE_DAYS, SPO2_MAX_RANGE_DAYS, HRV_MAX_RANGE_DAYS,
-            AZM_MAX_RANGE_DAYS, BREATHING_RATE_MAX_RANGE_DAYS,
-            SKIN_TEMPERATURE_MAX_RANGE_DAYS, CARDIO_FITNESS_MAX_RANGE_DAYS,
+            AZM_MAX_RANGE_DAYS,
+            BREATHING_RATE_MAX_RANGE_DAYS,
+            CARDIO_FITNESS_MAX_RANGE_DAYS,
+            HRV_MAX_RANGE_DAYS,
+            MAX_RANGE_DAYS,
+            SKIN_TEMPERATURE_MAX_RANGE_DAYS,
+            SLEEP_MAX_RANGE_DAYS,
+            SPO2_MAX_RANGE_DAYS,
+            WEIGHT_MAX_RANGE_DAYS,
         )
+
         assert MAX_RANGE_DAYS == 365
         assert SLEEP_MAX_RANGE_DAYS == 100
         assert WEIGHT_MAX_RANGE_DAYS == 31
@@ -55,9 +65,14 @@ class TestConfigDefaults:
 
     def test_new_scopes_present(self):
         from fitbit_mcp.config import FITBIT_SCOPES
+
         for scope in [
-            "respiratory_rate", "temperature", "cardio_fitness",
-            "location", "nutrition", "settings",
+            "respiratory_rate",
+            "temperature",
+            "cardio_fitness",
+            "location",
+            "nutrition",
+            "settings",
         ]:
             assert scope in FITBIT_SCOPES, f"missing scope: {scope}"
 
@@ -69,7 +84,9 @@ class TestConfigOverrides:
         with patch.dict(os.environ, {"FITBIT_MCP_CONFIG_DIR": str(tmp_path)}):
             # Re-import to pick up env var
             import importlib
+
             import fitbit_mcp.config
+
             importlib.reload(fitbit_mcp.config)
             assert fitbit_mcp.config.CONFIG_DIR == tmp_path
             # Restore
@@ -79,7 +96,9 @@ class TestConfigOverrides:
         db_path = tmp_path / "custom.db"
         with patch.dict(os.environ, {"FITBIT_MCP_DB_PATH": str(db_path)}):
             import importlib
+
             import fitbit_mcp.config
+
             importlib.reload(fitbit_mcp.config)
             assert fitbit_mcp.config.DB_PATH == db_path
             importlib.reload(fitbit_mcp.config)

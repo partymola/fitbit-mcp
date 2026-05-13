@@ -1,22 +1,19 @@
 """Tests for the trend analysis logic."""
 
-import json
 from datetime import date
 
-import pytest
-
 from fitbit_mcp.tools.analysis_tools import (
-    _get_period_key,
     _avg,
-    _trend_heart_rate,
+    _compare_periods,
+    _get_period_key,
+    _parse_compare_range,
     _trend_activity,
     _trend_exercises,
-    _trend_sleep,
-    _trend_weight,
-    _trend_spo2,
+    _trend_heart_rate,
     _trend_hrv,
-    _compare_periods,
-    _parse_compare_range,
+    _trend_sleep,
+    _trend_spo2,
+    _trend_weight,
 )
 
 

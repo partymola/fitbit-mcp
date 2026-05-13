@@ -4,9 +4,9 @@ from datetime import timedelta
 
 import anyio
 
-from ..mcp_instance import mcp
-from ..helpers import format_response, require_auth, parse_date
 from .. import api, db
+from ..helpers import format_response, parse_date, require_auth
+from ..mcp_instance import mcp
 from .sync_tools import auto_sync_if_stale
 
 
@@ -20,21 +20,23 @@ def _fetch_live(start_date, end_date) -> list[dict]:
         summary = data.get("summary", {})
         distances = summary.get("distances", [{}])
         distance_km = distances[0].get("distance") if distances else None
-        results.append({
-            "date": d.isoformat(),
-            "steps": summary.get("steps"),
-            "calories_out": summary.get("caloriesOut"),
-            "active_minutes": (
-                (summary.get("veryActiveMinutes") or 0) +
-                (summary.get("fairlyActiveMinutes") or 0)
-            ),
-            "very_active_minutes": summary.get("veryActiveMinutes"),
-            "fairly_active_minutes": summary.get("fairlyActiveMinutes"),
-            "lightly_active_minutes": summary.get("lightlyActiveMinutes"),
-            "sedentary_minutes": summary.get("sedentaryMinutes"),
-            "floors": summary.get("floors"),
-            "distance_km": distance_km,
-        })
+        results.append(
+            {
+                "date": d.isoformat(),
+                "steps": summary.get("steps"),
+                "calories_out": summary.get("caloriesOut"),
+                "active_minutes": (
+                    (summary.get("veryActiveMinutes") or 0)
+                    + (summary.get("fairlyActiveMinutes") or 0)
+                ),
+                "very_active_minutes": summary.get("veryActiveMinutes"),
+                "fairly_active_minutes": summary.get("fairlyActiveMinutes"),
+                "lightly_active_minutes": summary.get("lightlyActiveMinutes"),
+                "sedentary_minutes": summary.get("sedentaryMinutes"),
+                "floors": summary.get("floors"),
+                "distance_km": distance_km,
+            }
+        )
         d += timedelta(days=1)
     return results
 
@@ -68,17 +70,21 @@ async def fitbit_get_activity(
         entries = await anyio.to_thread.run_sync(lambda: _fetch_live(start, end))
     else:
         await anyio.to_thread.run_sync(lambda: auto_sync_if_stale("activity"))
+
         def _query():
             conn = db.get_db()
             rows = db.query_activity(conn, start.isoformat(), end.isoformat())
             conn.close()
             return rows
+
         entries = await anyio.to_thread.run_sync(_query)
 
     if not entries:
-        return format_response({
-            "message": "No activity data found for this period.",
-            "hint": "Try live=True to fetch directly from the API.",
-        })
+        return format_response(
+            {
+                "message": "No activity data found for this period.",
+                "hint": "Try live=True to fetch directly from the API.",
+            }
+        )
 
     return format_response({"activity": entries, "count": len(entries)})
