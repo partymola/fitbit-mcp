@@ -5,7 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fitbit_mcp.api import FitbitAPIError, FitbitAuthError, FitbitRateLimitError, get
+from fitbit_mcp.api import (
+    FitbitAPIError,
+    FitbitAuthError,
+    FitbitOfflineError,
+    FitbitRateLimitError,
+    get,
+)
 
 
 class TestAPIExceptions:
@@ -127,3 +133,42 @@ class TestAPIGet:
 
         with pytest.raises(FitbitAuthError):
             get("/1/user/-/test.json", retries=2)
+
+
+class TestOfflineMode:
+    """Live API access is refused in offline / cache-only mode."""
+
+    def test_offline_error_not_a_caught_api_error(self):
+        # run_sync() catches FitbitAPIError/Auth/RateLimit per data type. If
+        # FitbitOfflineError subclassed any of them it would be swallowed into
+        # per-type error rows instead of propagating to require_auth/CLI.
+        assert not issubclass(
+            FitbitOfflineError,
+            (FitbitAPIError, FitbitAuthError, FitbitRateLimitError),
+        )
+
+    @patch("fitbit_mcp.api.refresh_token")
+    @patch("fitbit_mcp.api.urllib.request.urlopen")
+    def test_get_raises_offline_before_any_network(self, mock_urlopen, mock_refresh, monkeypatch):
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+        with pytest.raises(FitbitOfflineError):
+            get("/1/user/-/test.json")
+        # The raise must happen before the token refresh and the network call.
+        mock_refresh.assert_not_called()
+        mock_urlopen.assert_not_called()
+
+    @patch("fitbit_mcp.api.refresh_token")
+    @patch("fitbit_mcp.api.urllib.request.urlopen")
+    def test_get_normal_when_not_offline(self, mock_urlopen, mock_refresh, monkeypatch):
+        # Regression guard: with the flag off, the network path is reached.
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+        mock_refresh.return_value = "test_token"
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({"data": "ok"}).encode()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        assert get("/1/user/-/test.json") == {"data": "ok"}
+        mock_refresh.assert_called()
+        mock_urlopen.assert_called()

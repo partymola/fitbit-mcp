@@ -19,6 +19,7 @@ from fitbit_mcp.tools.sync_tools import (
     _sync_sleep,
     _sync_spo2,
     _sync_weight,
+    auto_sync_if_stale,
     run_sync,
 )
 
@@ -528,3 +529,27 @@ class TestRunSync:
         call_paths = [c[0][0] for c in mock_api_get.call_args_list]
         assert any(yesterday in p for p in call_paths)
         assert not any("2026-01-01" in p for p in call_paths)
+
+
+class TestAutoSyncOffline:
+    """auto_sync_if_stale respects offline / cache-only mode."""
+
+    @patch("fitbit_mcp.tools.sync_tools.db.get_db")
+    @patch("fitbit_mcp.tools.sync_tools.run_sync")
+    def test_noop_when_offline(self, mock_run_sync, mock_get_db, monkeypatch):
+        # Offline mode: no sync attempt, and not even a DB touch for staleness.
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+        auto_sync_if_stale("heart_rate")
+        mock_run_sync.assert_not_called()
+        mock_get_db.assert_not_called()
+
+    @patch("fitbit_mcp.tools.sync_tools.db.get_last_sync_time")
+    @patch("fitbit_mcp.tools.sync_tools.db.get_db")
+    @patch("fitbit_mcp.tools.sync_tools.run_sync")
+    def test_runs_when_not_offline(self, mock_run_sync, mock_get_db, mock_last_sync, monkeypatch):
+        # Regression guard: the offline early-return must be gated on the flag,
+        # not always on. A never-synced (stale) type still triggers a sync.
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+        mock_last_sync.return_value = None
+        auto_sync_if_stale("heart_rate")
+        mock_run_sync.assert_called_once()

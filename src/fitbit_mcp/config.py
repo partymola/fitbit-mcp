@@ -11,6 +11,17 @@ _DEFAULT_DB_PATH = Path.home() / ".local" / "share" / "fitbit-mcp" / "fitbit.db"
 CONFIG_DIR = Path(os.environ.get("FITBIT_MCP_CONFIG_DIR", _DEFAULT_CONFIG_DIR))
 DB_PATH = Path(os.environ.get("FITBIT_MCP_DB_PATH", _DEFAULT_DB_PATH))
 
+# Offline / cache-only mode: when truthy, the server needs no credentials and
+# makes no live API calls - it serves the local SQLite cache only. Useful for
+# multi-host setups (one host syncs, others read the shared cache), CI, and
+# privacy. See the "Offline / cache-only mode" section in the README.
+OFFLINE_MODE = os.environ.get("FITBIT_MCP_OFFLINE", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # Credential files
 FITBIT_CONFIG_PATH = CONFIG_DIR / "fitbit_config.json"
 FITBIT_TOKENS_PATH = CONFIG_DIR / "fitbit_tokens.json"

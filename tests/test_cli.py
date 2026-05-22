@@ -34,3 +34,13 @@ def test_version_flag_does_not_mask_invalid_subcommand_args(capsys):
     captured = capsys.readouterr()
     assert exc_info.value.code != 0
     assert f"fitbit-mcp {version('fitbit-mcp')}" not in captured.out
+
+
+def test_sync_refuses_in_offline_mode(capsys, monkeypatch):
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+    with patch("sys.argv", ["fitbit-mcp", "sync"]):
+        with pytest.raises(SystemExit) as exc_info:
+            cli.main()
+
+    assert exc_info.value.code == 1
+    assert "FITBIT_MCP_OFFLINE" in capsys.readouterr().err

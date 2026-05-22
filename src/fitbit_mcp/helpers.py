@@ -6,6 +6,8 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
+from . import config
+from .api import FitbitOfflineError
 from .config import FITBIT_CONFIG_PATH, FITBIT_TOKENS_PATH
 
 # --- Response formatting ---
@@ -90,18 +92,60 @@ def format_duration(minutes: int | float | None) -> str:
 
 # --- Auth decorator ---
 
+# Empty-cache results carry a "Try live=True" hint (wording varies per tool).
+# In offline mode live=True is unavailable, so any such hint is rewritten on
+# the way out (see _annotate_offline).
+_OFFLINE_HINT = (
+    "Offline mode is on (FITBIT_MCP_OFFLINE); the host that owns the cache must "
+    "sync this period. Live fetch is disabled here."
+)
+
+
+def _annotate_offline(result: str) -> str:
+    """Tag a successful offline response and correct the now-wrong live hint.
+
+    Only applied in offline mode. Non-JSON or non-dict payloads pass through
+    unchanged.
+    """
+    try:
+        parsed = json.loads(result)
+    except (TypeError, ValueError):
+        return result
+    if not isinstance(parsed, dict):
+        return result
+    parsed["offline_mode"] = True
+    hint = parsed.get("hint")
+    if isinstance(hint, str) and "live=True" in hint:
+        parsed["hint"] = _OFFLINE_HINT
+    return json.dumps(parsed, indent=2, default=str)
+
 
 def require_auth(func):
-    """Decorator that checks credentials exist before calling a tool."""
+    """Gate a tool on credentials, with offline/cache-only support.
+
+    Normal mode: return a "not configured" error if the credential files are
+    missing, otherwise call the tool unchanged.
+
+    Offline mode (FITBIT_MCP_OFFLINE): skip the credential check so cache reads
+    work without a token; any attempted live API call raises FitbitOfflineError,
+    which becomes a clean message; successful responses are tagged offline_mode.
+    """
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
-        if not FITBIT_CONFIG_PATH.exists() or not FITBIT_TOKENS_PATH.exists():
-            return json.dumps(
-                {
-                    "error": "Fitbit not configured. Run: fitbit-mcp auth",
-                }
-            )
-        return await func(*args, **kwargs)
+        if not config.OFFLINE_MODE:
+            if not FITBIT_CONFIG_PATH.exists() or not FITBIT_TOKENS_PATH.exists():
+                return json.dumps(
+                    {
+                        "error": "Fitbit not configured. Run: fitbit-mcp auth",
+                    }
+                )
+            return await func(*args, **kwargs)
+
+        try:
+            result = await func(*args, **kwargs)
+        except FitbitOfflineError as e:
+            return format_response({"error": str(e), "offline_mode": True})
+        return _annotate_offline(result)
 
     return wrapper

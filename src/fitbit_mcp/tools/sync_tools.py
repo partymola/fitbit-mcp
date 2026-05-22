@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 import anyio
 
-from .. import api, db
+from .. import api, config, db
 from ..config import (
     AZM_MAX_RANGE_DAYS,
     BREATHING_RATE_MAX_RANGE_DAYS,
@@ -482,6 +482,9 @@ def run_sync(data_types: list[str], days: int = 30) -> dict:
                 "range": f"{start_date} to {end_date}",
             }
 
+        # NOTE: FitbitOfflineError is intentionally not caught here. It must
+        # propagate to require_auth / the CLI sync handler so offline mode
+        # returns one clean message instead of writing per-type error rows.
         except api.FitbitRateLimitError as e:
             db.log_sync(conn, dtype, "partial", notes="rate limited")
             results[dtype] = {"status": "rate_limited", "message": str(e)}
@@ -500,7 +503,12 @@ def auto_sync_if_stale(data_type: str) -> None:
 
     Failures are silently suppressed - the caller should still query the cache.
     This ensures tools work on first use without requiring an explicit fitbit_sync call.
+
+    No-op in offline mode (FITBIT_MCP_OFFLINE): a cache-only host never syncs.
     """
+    if config.OFFLINE_MODE:
+        return
+
     conn = db.get_db()
     last_sync = db.get_last_sync_time(conn, data_type)
     conn.close()
@@ -540,6 +548,18 @@ async def fitbit_sync(
     Not for querying data - use fitbit_get_heart_rate, fitbit_get_activity,
     fitbit_get_sleep, etc. instead.
     """
+    if config.OFFLINE_MODE:
+        return format_response(
+            {
+                "error": (
+                    "Offline mode is on (FITBIT_MCP_OFFLINE); syncing is disabled. "
+                    "Run the sync on the host that owns the cache, or unset "
+                    "FITBIT_MCP_OFFLINE."
+                ),
+                "offline_mode": True,
+            }
+        )
+
     types = [t.strip() for t in data_types.split(",")]
     if "all" in types:
         types = [

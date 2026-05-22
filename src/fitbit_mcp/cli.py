@@ -97,6 +97,16 @@ def main():
         setup_auth()
 
     elif args.cmd == "sync":
+        from . import config
+
+        if config.OFFLINE_MODE:
+            print(
+                "Offline mode is on (FITBIT_MCP_OFFLINE); refusing to sync. "
+                "Unset FITBIT_MCP_OFFLINE to sync.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         types = [t.strip() for t in args.types.split(",")]
         if "all" in types:
             types = [

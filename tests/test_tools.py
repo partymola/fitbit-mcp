@@ -443,3 +443,146 @@ class TestToolQueryFunctions:
         assert "hrv" in parsed
         assert parsed["count"] == 1
         assert parsed["hrv"][0]["daily_rmssd"] == 38.0
+
+
+class TestOfflineMode:
+    """Offline / cache-only mode (FITBIT_MCP_OFFLINE)."""
+
+    @patch("fitbit_mcp.helpers.FITBIT_CONFIG_PATH")
+    @patch("fitbit_mcp.helpers.FITBIT_TOKENS_PATH")
+    async def test_require_auth_skips_credential_check(
+        self, mock_tokens_path, mock_config_path, monkeypatch
+    ):
+        # No credential files, but offline mode lets the tool run anyway.
+        mock_config_path.exists.return_value = False
+        mock_tokens_path.exists.return_value = False
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+
+        @require_auth
+        async def tool_fn():
+            return json.dumps({"ok": True})
+
+        parsed = json.loads(await tool_fn())
+        assert parsed["ok"] is True
+        assert parsed["offline_mode"] is True
+
+    @patch("fitbit_mcp.helpers.FITBIT_CONFIG_PATH")
+    @patch("fitbit_mcp.helpers.FITBIT_TOKENS_PATH")
+    async def test_require_auth_still_gates_when_not_offline(
+        self, mock_tokens_path, mock_config_path, monkeypatch
+    ):
+        # Regression guard: the offline branch must not weaken the normal gate.
+        mock_config_path.exists.return_value = False
+        mock_tokens_path.exists.return_value = True
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+
+        @require_auth
+        async def tool_fn():
+            return "should not reach"
+
+        parsed = json.loads(await tool_fn())
+        assert "not configured" in parsed["error"]
+
+    async def test_require_auth_converts_offline_error(self, monkeypatch):
+        from fitbit_mcp.api import FitbitOfflineError
+
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+
+        @require_auth
+        async def tool_fn():
+            raise FitbitOfflineError("live disabled")
+
+        parsed = json.loads(await tool_fn())
+        assert parsed["offline_mode"] is True
+        assert "live disabled" in parsed["error"]
+
+    @patch("fitbit_mcp.helpers.FITBIT_CONFIG_PATH")
+    @patch("fitbit_mcp.helpers.FITBIT_TOKENS_PATH")
+    async def test_cacheable_tool_serves_cache_offline(
+        self, mock_tokens_path, mock_config_path, monkeypatch, tmp_path
+    ):
+        mock_config_path.exists.return_value = False
+        mock_tokens_path.exists.return_value = False
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+
+        from fitbit_mcp import db as db_mod
+
+        db_path = tmp_path / "test.db"
+        conn = db_mod.get_db(db_path)
+        db_mod.save_heart_rate(conn, "2026-03-12", 58, [])
+        conn.commit()
+        conn.close()
+
+        with patch.object(db_mod, "DB_PATH", db_path):
+            from fitbit_mcp.tools.heart_tools import fitbit_get_heart_rate
+
+            result = await fitbit_get_heart_rate(start_date="2026-03-10", end_date="2026-03-15")
+
+        parsed = json.loads(result)
+        assert parsed["offline_mode"] is True
+        assert parsed["count"] == 1
+        assert parsed["heart_rate"][0]["resting_hr"] == 58
+
+    @patch("fitbit_mcp.helpers.FITBIT_CONFIG_PATH")
+    @patch("fitbit_mcp.helpers.FITBIT_TOKENS_PATH")
+    async def test_cacheable_tool_live_true_offline_refused(
+        self, mock_tokens_path, mock_config_path, monkeypatch, tmp_path
+    ):
+        mock_config_path.exists.return_value = False
+        mock_tokens_path.exists.return_value = False
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+
+        from fitbit_mcp import db as db_mod
+
+        db_path = tmp_path / "test.db"
+        with patch.object(db_mod, "DB_PATH", db_path):
+            from fitbit_mcp.tools.heart_tools import fitbit_get_heart_rate
+
+            result = await fitbit_get_heart_rate(
+                start_date="2026-03-10", end_date="2026-03-15", live=True
+            )
+
+        parsed = json.loads(result)
+        assert parsed["offline_mode"] is True
+        assert "error" in parsed
+
+    async def test_live_only_tool_offline_refused(self, monkeypatch):
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+
+        from fitbit_mcp.tools.devices_tools import fitbit_get_devices
+
+        parsed = json.loads(await fitbit_get_devices())
+        assert parsed["offline_mode"] is True
+        assert "error" in parsed
+
+    async def test_fitbit_sync_offline_refused(self, monkeypatch):
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+
+        from fitbit_mcp.tools.sync_tools import fitbit_sync
+
+        parsed = json.loads(await fitbit_sync())
+        assert parsed["offline_mode"] is True
+        assert "error" in parsed
+
+    @patch("fitbit_mcp.helpers.FITBIT_CONFIG_PATH")
+    @patch("fitbit_mcp.helpers.FITBIT_TOKENS_PATH")
+    async def test_variant_live_hint_rewritten_offline(
+        self, mock_tokens_path, mock_config_path, monkeypatch, tmp_path
+    ):
+        # cardio_fitness uses a non-canonical "Try live=True" hint; it must still
+        # be rewritten offline so a cache-only host is never told to go live.
+        mock_config_path.exists.return_value = False
+        mock_tokens_path.exists.return_value = False
+        monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+
+        from fitbit_mcp import db as db_mod
+
+        db_path = tmp_path / "test.db"
+        with patch.object(db_mod, "DB_PATH", db_path):
+            from fitbit_mcp.tools.cardio_fitness_tools import fitbit_get_cardio_fitness
+
+            result = await fitbit_get_cardio_fitness(start_date="2026-03-10", end_date="2026-03-15")
+
+        parsed = json.loads(result)
+        assert parsed["offline_mode"] is True
+        assert "live=True" not in parsed.get("hint", "")

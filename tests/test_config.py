@@ -102,3 +102,40 @@ class TestConfigOverrides:
             importlib.reload(fitbit_mcp.config)
             assert fitbit_mcp.config.DB_PATH == db_path
             importlib.reload(fitbit_mcp.config)
+
+
+class TestOfflineMode:
+    """Test FITBIT_MCP_OFFLINE parsing."""
+
+    def test_offline_default_false(self):
+        import importlib
+
+        import fitbit_mcp.config
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("FITBIT_MCP_OFFLINE", None)
+            importlib.reload(fitbit_mcp.config)
+            assert fitbit_mcp.config.OFFLINE_MODE is False
+        importlib.reload(fitbit_mcp.config)
+
+    def test_offline_truthy_values(self):
+        import importlib
+
+        import fitbit_mcp.config
+
+        for val in ("1", "true", "True", "YES", "on"):
+            with patch.dict(os.environ, {"FITBIT_MCP_OFFLINE": val}):
+                importlib.reload(fitbit_mcp.config)
+                assert fitbit_mcp.config.OFFLINE_MODE is True, val
+        importlib.reload(fitbit_mcp.config)
+
+    def test_offline_falsy_values(self):
+        import importlib
+
+        import fitbit_mcp.config
+
+        for val in ("0", "false", "no", "off", "", "  "):
+            with patch.dict(os.environ, {"FITBIT_MCP_OFFLINE": val}):
+                importlib.reload(fitbit_mcp.config)
+                assert fitbit_mcp.config.OFFLINE_MODE is False, val
+        importlib.reload(fitbit_mcp.config)

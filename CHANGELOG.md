@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Offline / cache-only mode via the `FITBIT_MCP_OFFLINE` environment variable. When truthy (`1`, `true`, `yes`, `on`), the server needs no credentials and makes no live API calls: it serves the local SQLite cache only, auto-sync is disabled, and `live=True`, the live-only tools, and `fitbit_sync` return a clear "offline mode" message. Successful responses are tagged with `"offline_mode": true`. Intended for multi-host setups (one host syncs a shared database, others read), CI, and privacy. Default behaviour is unchanged when the variable is unset.
 - `fitbit-mcp --version` prints the installed package version.
 - Eight new data types and corresponding query tools:
   - `fitbit_get_azm` - Active Zone Minutes with per-zone breakdown (fat burn / cardio / peak)

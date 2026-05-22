@@ -165,6 +165,33 @@ Paths are overridable via environment variables:
 |----------|---------|-------------|
 | `FITBIT_MCP_CONFIG_DIR` | `~/.config/fitbit-mcp/` | Directory for OAuth credentials |
 | `FITBIT_MCP_DB_PATH` | `~/.local/share/fitbit-mcp/fitbit.db` | SQLite database path |
+| `FITBIT_MCP_OFFLINE` | unset | If truthy (`1`, `true`, `yes`, `on`), run as a cache-only reader: no credentials required, no live API calls. See below. |
+
+### Offline / cache-only mode
+
+By default the server auto-syncs on demand, so query tools fetch fresh data
+without a cron job. Set `FITBIT_MCP_OFFLINE=1` to run as a pure cache reader
+instead:
+
+- No Fitbit credentials are required - the server never touches the token file.
+- No live API calls are made. Auto-sync is disabled, and `live=True`, the
+  live-only tools (`fitbit_get_devices`, `fitbit_get_lifetime_stats`,
+  `fitbit_get_goals`), and `fitbit_sync` return a clear "offline mode" message
+  instead of calling the API.
+- Query tools serve whatever is in the local SQLite cache. Responses are tagged
+  with `"offline_mode": true`.
+
+Typical uses:
+
+- **Multi-device setups** - one host runs `fitbit-mcp sync` (via cron/systemd)
+  against a shared database; other hosts set `FITBIT_MCP_OFFLINE=1` and point
+  `FITBIT_MCP_DB_PATH` at the same cache, and only read. This keeps the Fitbit
+  OAuth token (single-use, rotating) owned by exactly one host, avoiding refresh
+  collisions.
+- **CI and privacy** - run queries with no network access and no credentials.
+
+Keeping the cache fresh is then the syncing host's job. Unset
+`FITBIT_MCP_OFFLINE` to return to on-demand auto-sync.
 
 ## Rate limits
 

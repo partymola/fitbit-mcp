@@ -14,6 +14,7 @@ import logging
 import urllib.error
 import urllib.request
 
+from . import config
 from .auth import refresh_token
 from .config import FITBIT_API_BASE
 
@@ -22,6 +23,17 @@ logger = logging.getLogger(__name__)
 
 class FitbitAuthError(Exception):
     """Token expired or invalid, re-auth needed."""
+
+
+class FitbitOfflineError(Exception):
+    """A live API call was attempted while offline/cache-only mode is on.
+
+    Deliberately subclasses Exception directly and NOT FitbitAPIError /
+    FitbitAuthError / FitbitRateLimitError: run_sync() catches those per data
+    type, which would swallow this and write spurious error rows to the cache.
+    It is meant to propagate up to require_auth (and the CLI sync handler),
+    which translate it into a single clean "offline mode" message.
+    """
 
 
 class FitbitRateLimitError(Exception):
@@ -47,6 +59,12 @@ def get(path: str, retries: int = 3) -> dict:
 
     Returns the parsed JSON response body.
     """
+    if config.OFFLINE_MODE:
+        raise FitbitOfflineError(
+            "Offline mode is on (FITBIT_MCP_OFFLINE); live API calls are disabled. "
+            "Query the local cache instead, or unset FITBIT_MCP_OFFLINE."
+        )
+
     for attempt in range(retries):
         token = refresh_token()
         url = f"{FITBIT_API_BASE}{path}"
