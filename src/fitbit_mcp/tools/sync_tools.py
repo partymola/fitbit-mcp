@@ -489,6 +489,11 @@ def run_sync(data_types: list[str], days: int = 30) -> dict:
             db.log_sync(conn, dtype, "partial", notes="rate limited")
             results[dtype] = {"status": "rate_limited", "message": str(e)}
         except api.FitbitAuthError as e:
+            # Log an error row so the failure is visible in sync_log (and so
+            # external healthchecks that key on sync_log freshness can detect
+            # a silently-dead token). The CLI sync handler turns any
+            # auth_error/error result into a non-zero exit for systemd.
+            db.log_sync(conn, dtype, "error", notes=f"auth: {e}")
             results[dtype] = {"status": "auth_error", "message": str(e)}
         except api.FitbitAPIError as e:
             db.log_sync(conn, dtype, "error", notes=str(e))

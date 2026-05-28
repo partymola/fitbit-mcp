@@ -133,6 +133,15 @@ def main():
             else:
                 print(f"  {dtype}: {status} - {result.get('message', '')}")
 
+        # Exit non-zero if any type failed in a way that needs attention, so
+        # systemd marks the unit failed (and any OnFailure= notifier fires).
+        # rate_limited is transient and self-heals on the next run, so it is
+        # not treated as a failure here.
+        failed = [d for d, r in results.items() if r.get("status") in ("auth_error", "error")]
+        if failed:
+            print(f"Sync failed for: {', '.join(failed)}", file=sys.stderr)
+            sys.exit(1)
+
     elif args.cmd == "import":
         from pathlib import Path
 
