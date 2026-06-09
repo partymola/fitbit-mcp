@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-09
+
 ### Added
 
 - Offline / cache-only mode via the `FITBIT_MCP_OFFLINE` environment variable. When truthy (`1`, `true`, `yes`, `on`), the server needs no credentials and makes no live API calls: it serves the local SQLite cache only, auto-sync is disabled, and `live=True`, the live-only tools, and `fitbit_sync` return a clear "offline mode" message. Successful responses are tagged with `"offline_mode": true`. Intended for multi-host setups (one host syncs a shared database, others read), CI, and privacy. Default behaviour is unchanged when the variable is unset.
-- `fitbit-mcp --version` prints the installed package version.
+- `fitbit-mcp --version` (and the `-V` short alias) prints the installed package version.
+- Continuous integration now runs the test suite on Python 3.14 in addition to 3.13.
 - Eight new data types and corresponding query tools:
   - `fitbit_get_azm` - Active Zone Minutes with per-zone breakdown (fat burn / cardio / peak)
   - `fitbit_get_breathing_rate` - nightly breaths per minute
@@ -52,5 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic rate-limit retry on 429 responses.
 - Pre-commit hook (`scripts/check-no-data.sh`) blocking commit of databases, tokens, and other secrets.
 
-[Unreleased]: https://github.com/partymola/fitbit-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/partymola/fitbit-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/partymola/fitbit-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/partymola/fitbit-mcp/releases/tag/v0.1.0

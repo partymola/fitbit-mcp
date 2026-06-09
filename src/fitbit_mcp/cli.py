@@ -2,7 +2,7 @@
 
 Usage:
     fitbit-mcp                Start the MCP server (stdio transport)
-    fitbit-mcp --version      Print the installed package version
+    fitbit-mcp -V, --version  Print the installed package version
     fitbit-mcp auth           Interactive OAuth setup
     fitbit-mcp sync           Run data sync (for cron/systemd use)
     fitbit-mcp import         Import existing JSON data files into SQLite
@@ -46,7 +46,7 @@ def _version_text():
 
 
 def _add_version_argument(parser):
-    parser.add_argument("--version", action="version", version=_version_text())
+    parser.add_argument("-V", "--version", action="version", version=_version_text())
 
 
 def main():
