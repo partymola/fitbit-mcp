@@ -147,31 +147,97 @@ def _sync_exercises(conn, start_date: date, end_date: date) -> int:
     return count
 
 
+def aggregate_sleep_nights(entries: list[dict]) -> list[dict]:
+    """Collapse raw Fitbit sleep sessions into one row per night.
+
+    Fitbit returns one entry per sleep *session*. A fragmented or split
+    night - a main sleep plus a nap, or a wake-and-resume that Fitbit logs
+    as two records - yields several entries sharing the same `dateOfSleep`.
+    The cache is keyed by date, so without aggregation the last session
+    written silently overwrites the rest, leaving a misleadingly short
+    night. Here we sum the sessions into the night's true total, matching
+    Fitbit's own per-day `summary.totalMinutesAsleep`.
+
+    Aggregation rules per `dateOfSleep`:
+      - total_minutes / stage minutes: summed across all sessions
+      - start_time: earliest; end_time: latest
+      - efficiency: time-in-bed-weighted mean of sessions that report one
+        (so a single-session night keeps Fitbit's reported value exactly)
+      - sessions: count of source records (1 = normal night)
+
+    Entries without a `dateOfSleep` are skipped.
+    """
+    _STAGE_COLS = (
+        ("deep", "deep_minutes"),
+        ("light", "light_minutes"),
+        ("rem", "rem_minutes"),
+        ("wake", "wake_minutes"),
+    )
+    nights: dict[str, dict] = {}
+    for entry in entries:
+        ds = entry.get("dateOfSleep")
+        if not ds:
+            continue
+        stages = (entry.get("levels") or {}).get("summary") or {}
+        asleep = entry.get("minutesAsleep") or 0
+        in_bed = entry.get("timeInBed") or 0
+        eff = entry.get("efficiency")
+        start = entry.get("startTime")
+        end = entry.get("endTime")
+
+        acc = nights.get(ds)
+        if acc is None:
+            acc = {
+                "date": ds,
+                "sessions": 0,
+                "total_minutes": 0,
+                "start_time": start,
+                "end_time": end,
+                "deep_minutes": None,
+                "light_minutes": None,
+                "rem_minutes": None,
+                "wake_minutes": None,
+                "_eff_weighted": 0.0,
+                "_eff_in_bed": 0,
+            }
+            nights[ds] = acc
+
+        acc["sessions"] += 1
+        acc["total_minutes"] += asleep
+        if start and (acc["start_time"] is None or start < acc["start_time"]):
+            acc["start_time"] = start
+        if end and (acc["end_time"] is None or end > acc["end_time"]):
+            acc["end_time"] = end
+        for stage_key, col in _STAGE_COLS:
+            minutes = (stages.get(stage_key) or {}).get("minutes")
+            if minutes is not None:
+                acc[col] = (acc[col] or 0) + minutes
+        if eff is not None and in_bed:
+            acc["_eff_weighted"] += eff * in_bed
+            acc["_eff_in_bed"] += in_bed
+
+    rows = []
+    for acc in nights.values():
+        in_bed = acc.pop("_eff_in_bed")
+        weighted = acc.pop("_eff_weighted")
+        acc["efficiency"] = round(weighted / in_bed) if in_bed else None
+        rows.append(acc)
+    return sorted(rows, key=lambda r: r["date"])
+
+
 def _sync_sleep(conn, start_date: date, end_date: date) -> int:
-    """Sync sleep logs."""
+    """Sync sleep logs. Returns count of nights upserted.
+
+    Multiple same-night sessions are aggregated into one row per night via
+    `aggregate_sleep_nights`, so a fragmented night is stored as its true
+    total rather than collapsing to the last session written.
+    """
     count = 0
     for chunk_start, chunk_end in _chunk_date_ranges(start_date, end_date, SLEEP_MAX_RANGE_DAYS):
         path = f"/1.2/user/-/sleep/date/{chunk_start}/{chunk_end}.json"
         data = api.get(path)
-        for entry in data.get("sleep", []):
-            ds = entry.get("dateOfSleep")
-            if not ds:
-                continue
-            stages = entry.get("levels", {}).get("summary", {})
-            db.save_sleep(
-                conn,
-                {
-                    "date": ds,
-                    "total_minutes": entry.get("minutesAsleep"),
-                    "efficiency": entry.get("efficiency"),
-                    "start_time": entry.get("startTime"),
-                    "end_time": entry.get("endTime"),
-                    "deep_minutes": (stages.get("deep") or {}).get("minutes"),
-                    "light_minutes": (stages.get("light") or {}).get("minutes"),
-                    "rem_minutes": (stages.get("rem") or {}).get("minutes"),
-                    "wake_minutes": (stages.get("wake") or {}).get("minutes"),
-                },
-            )
+        for row in aggregate_sleep_nights(data.get("sleep", [])):
+            db.save_sleep(conn, row)
             count += 1
         conn.commit()
     return count
@@ -482,22 +548,24 @@ def run_sync(data_types: list[str], days: int = 30) -> dict:
                 "range": f"{start_date} to {end_date}",
             }
 
-        # NOTE: FitbitOfflineError is intentionally not caught here. It must
-        # propagate to require_auth / the CLI sync handler so offline mode
-        # returns one clean message instead of writing per-type error rows.
+        # FitbitOfflineError is intentionally not handled like the errors
+        # below: it must propagate to require_auth / the CLI sync handler so
+        # offline mode returns one clean message instead of per-type error
+        # rows. We only intercept it to close the connection, then re-raise.
         except api.FitbitRateLimitError as e:
             db.log_sync(conn, dtype, "partial", notes="rate limited")
             results[dtype] = {"status": "rate_limited", "message": str(e)}
         except api.FitbitAuthError as e:
-            # Log an error row so the failure is visible in sync_log (and so
-            # external healthchecks that key on sync_log freshness can detect
-            # a silently-dead token). The CLI sync handler turns any
-            # auth_error/error result into a non-zero exit for systemd.
+            # Log an error row so a dead/expired token is visible in sync_log
+            # and the CLI sync can exit non-zero.
             db.log_sync(conn, dtype, "error", notes=f"auth: {e}")
             results[dtype] = {"status": "auth_error", "message": str(e)}
         except api.FitbitAPIError as e:
             db.log_sync(conn, dtype, "error", notes=str(e))
             results[dtype] = {"status": "error", "message": str(e)}
+        except api.FitbitOfflineError:
+            conn.close()
+            raise
 
     conn.close()
     return results

@@ -19,6 +19,7 @@ from fitbit_mcp.tools.sync_tools import (
     _sync_sleep,
     _sync_spo2,
     _sync_weight,
+    aggregate_sleep_nights,
     auto_sync_if_stale,
     run_sync,
 )
@@ -188,6 +189,180 @@ class TestSyncSleep:
         }
         count = _sync_sleep(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
         assert count == 0
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_fragmented_night_aggregated(self, mock_get, tmp_db):
+        """A night split across two sessions is stored as one summed row."""
+        mock_get.return_value = {
+            "sleep": [
+                {
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 180,
+                    "timeInBed": 210,
+                    "efficiency": 86,
+                    "startTime": "2026-03-15T01:00:00.000",
+                    "endTime": "2026-03-15T04:30:00.000",
+                    "levels": {
+                        "summary": {
+                            "deep": {"minutes": 20},
+                            "light": {"minutes": 120},
+                            "rem": {"minutes": 30},
+                            "wake": {"minutes": 30},
+                        }
+                    },
+                },
+                {
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 120,
+                    "timeInBed": 150,
+                    "efficiency": 80,
+                    "startTime": "2026-03-15T05:30:00.000",
+                    "endTime": "2026-03-15T08:00:00.000",
+                    "levels": {
+                        "summary": {
+                            "deep": {"minutes": 10},
+                            "light": {"minutes": 80},
+                            "rem": {"minutes": 20},
+                            "wake": {"minutes": 25},
+                        }
+                    },
+                },
+            ]
+        }
+        count = _sync_sleep(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
+        assert count == 1  # one night written, not two
+        rows = db.query_sleep(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["sessions"] == 2
+        assert row["total_minutes"] == 300
+        assert row["deep_minutes"] == 30
+        assert row["light_minutes"] == 200
+        assert row["rem_minutes"] == 50
+        assert row["wake_minutes"] == 55
+        assert row["start_time"] == "2026-03-15T01:00:00.000"
+        assert row["end_time"] == "2026-03-15T08:00:00.000"
+
+
+class TestAggregateSleepNights:
+    """Unit tests for the per-night sleep aggregation helper."""
+
+    def test_single_session_preserves_values(self):
+        rows = aggregate_sleep_nights(
+            [
+                {
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 420,
+                    "timeInBed": 461,
+                    "efficiency": 91,
+                    "startTime": "2026-03-14T23:00:00.000",
+                    "endTime": "2026-03-15T06:41:00.000",
+                    "levels": {"summary": {"deep": {"minutes": 60}}},
+                }
+            ]
+        )
+        assert len(rows) == 1
+        assert rows[0]["sessions"] == 1
+        assert rows[0]["total_minutes"] == 420
+        assert rows[0]["efficiency"] == 91  # single session keeps reported value
+        assert rows[0]["deep_minutes"] == 60
+
+    def test_skips_entries_without_date(self):
+        assert aggregate_sleep_nights([{"minutesAsleep": 300}]) == []
+
+    def test_groups_distinct_nights_sorted(self):
+        rows = aggregate_sleep_nights(
+            [
+                {
+                    "dateOfSleep": "2026-03-16",
+                    "minutesAsleep": 400,
+                    "timeInBed": 420,
+                    "efficiency": 95,
+                    "startTime": "2026-03-16T00:00:00.000",
+                    "endTime": "2026-03-16T07:00:00.000",
+                    "levels": {"summary": {}},
+                },
+                {
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 300,
+                    "timeInBed": 320,
+                    "efficiency": 90,
+                    "startTime": "2026-03-15T00:00:00.000",
+                    "endTime": "2026-03-15T05:00:00.000",
+                    "levels": {"summary": {}},
+                },
+            ]
+        )
+        assert [r["date"] for r in rows] == ["2026-03-15", "2026-03-16"]
+        assert all(r["sessions"] == 1 for r in rows)
+
+    def test_nap_without_efficiency_does_not_dilute(self):
+        """A session lacking efficiency is excluded from the weighted mean."""
+        rows = aggregate_sleep_nights(
+            [
+                {
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 400,
+                    "timeInBed": 440,
+                    "efficiency": 92,
+                    "startTime": "2026-03-15T00:00:00.000",
+                    "endTime": "2026-03-15T07:20:00.000",
+                    "levels": {"summary": {}},
+                },
+                {
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 30,
+                    "timeInBed": 35,
+                    "efficiency": None,
+                    "startTime": "2026-03-15T14:00:00.000",
+                    "endTime": "2026-03-15T14:35:00.000",
+                    "levels": {"summary": {}},
+                },
+            ]
+        )
+        assert len(rows) == 1
+        assert rows[0]["sessions"] == 2
+        assert rows[0]["total_minutes"] == 430
+        assert rows[0]["efficiency"] == 92  # nap excluded from weighting
+
+    def test_classic_sleep_has_no_stage_minutes(self):
+        """A classic-type record (asleep/restless/awake) aggregates its total
+        but leaves the stage columns None - no crash, no bogus stage data."""
+        rows = aggregate_sleep_nights(
+            [
+                {
+                    "dateOfSleep": "2026-03-15",
+                    "minutesAsleep": 200,
+                    "timeInBed": 230,
+                    "efficiency": 87,
+                    "startTime": "2026-03-15T01:00:00.000",
+                    "endTime": "2026-03-15T05:00:00.000",
+                    "levels": {
+                        "summary": {
+                            "asleep": {"minutes": 200},
+                            "restless": {"minutes": 25},
+                            "awake": {"minutes": 5},
+                        }
+                    },
+                }
+            ]
+        )
+        assert len(rows) == 1
+        assert rows[0]["sessions"] == 1
+        assert rows[0]["total_minutes"] == 200
+        assert rows[0]["deep_minutes"] is None
+        assert rows[0]["light_minutes"] is None
+        assert rows[0]["rem_minutes"] is None
+        assert rows[0]["wake_minutes"] is None
+
+    def test_null_levels_does_not_crash(self):
+        """A record with `levels: null` (not just absent) is handled gracefully."""
+        rows = aggregate_sleep_nights(
+            [{"dateOfSleep": "2026-03-15", "minutesAsleep": 100, "levels": None}]
+        )
+        assert len(rows) == 1
+        assert rows[0]["total_minutes"] == 100
+        assert rows[0]["deep_minutes"] is None
 
 
 class TestSyncWeight:
@@ -475,6 +650,28 @@ class TestRunSync:
 
         results = run_sync(["heart_rate"], days=7)
         assert results["heart_rate"]["status"] == "rate_limited"
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    @patch("fitbit_mcp.tools.sync_tools.db.get_db")
+    def test_offline_error_propagates_and_closes(self, mock_get_db, mock_api_get, tmp_db):
+        """FitbitOfflineError must escape run_sync (so callers surface one clean
+        offline message instead of per-type error rows), and the DB connection
+        must still be closed on the way out."""
+        import sqlite3
+
+        import pytest
+
+        from fitbit_mcp import api
+
+        mock_get_db.return_value = tmp_db
+        mock_api_get.side_effect = api.FitbitOfflineError("offline")
+
+        with pytest.raises(api.FitbitOfflineError):
+            run_sync(["heart_rate"], days=7)
+
+        # connection was closed despite the exception escaping
+        with pytest.raises(sqlite3.ProgrammingError):
+            tmp_db.execute("SELECT 1")
 
     @patch("fitbit_mcp.tools.sync_tools.api.get")
     @patch("fitbit_mcp.tools.sync_tools.db.get_db")

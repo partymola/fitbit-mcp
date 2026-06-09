@@ -148,31 +148,59 @@ class TestSleepFetchLive:
         assert result[0]["deep_minutes"] == 80
 
     @patch("fitbit_mcp.tools.sleep_tools.api.get")
-    def test_deduplicates_keeps_longest(self, mock_get):
-        """When two sleep entries share a date, the longer one is kept."""
+    def test_aggregates_split_night(self, mock_get):
+        """Two sessions sharing a date are summed into one night, not collapsed."""
         mock_get.return_value = {
             "sleep": [
                 {
                     "dateOfSleep": "2026-03-15",
                     "minutesAsleep": 300,
+                    "timeInBed": 320,
                     "efficiency": 85,
-                    "startTime": "2026-03-15T01:00:00",
-                    "endTime": "2026-03-15T06:00:00",
-                    "levels": {"summary": {}},
+                    "startTime": "2026-03-15T01:00:00.000",
+                    "endTime": "2026-03-15T06:30:00.000",
+                    "levels": {
+                        "summary": {
+                            "deep": {"minutes": 40},
+                            "light": {"minutes": 180},
+                            "rem": {"minutes": 80},
+                            "wake": {"minutes": 20},
+                        }
+                    },
                 },
                 {
                     "dateOfSleep": "2026-03-15",
-                    "minutesAsleep": 420,
-                    "efficiency": 91,
-                    "startTime": "2026-03-14T23:00:00",
-                    "endTime": "2026-03-15T06:00:00",
-                    "levels": {"summary": {}},
+                    "minutesAsleep": 90,
+                    "timeInBed": 100,
+                    "efficiency": 90,
+                    "startTime": "2026-03-14T23:00:00.000",
+                    "endTime": "2026-03-15T00:40:00.000",
+                    "levels": {
+                        "summary": {
+                            "deep": {"minutes": 10},
+                            "light": {"minutes": 60},
+                            "rem": {"minutes": 15},
+                            "wake": {"minutes": 5},
+                        }
+                    },
                 },
             ]
         }
         result = sleep_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
         assert len(result) == 1
-        assert result[0]["total_minutes"] == 420
+        night = result[0]
+        assert night["sessions"] == 2
+        # total + stages summed across both sessions
+        assert night["total_minutes"] == 390
+        assert night["deep_minutes"] == 50
+        assert night["light_minutes"] == 240
+        assert night["rem_minutes"] == 95
+        assert night["wake_minutes"] == 25
+        # earliest start, latest end across the night
+        assert night["start_time"] == "2026-03-14T23:00:00.000"
+        assert night["end_time"] == "2026-03-15T06:30:00.000"
+        # time-in-bed-weighted efficiency: (85*320 + 90*100) / 420 = 86.19 -> 86
+        assert night["efficiency"] == 86
 
     @patch("fitbit_mcp.tools.sleep_tools.api.get")
     def test_skips_entries_without_date(self, mock_get):

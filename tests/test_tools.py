@@ -544,7 +544,7 @@ class TestOfflineMode:
 
         parsed = json.loads(result)
         assert parsed["offline_mode"] is True
-        assert "error" in parsed
+        assert "FITBIT_MCP_OFFLINE" in parsed["error"]
 
     async def test_live_only_tool_offline_refused(self, monkeypatch):
         monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
@@ -553,7 +553,7 @@ class TestOfflineMode:
 
         parsed = json.loads(await fitbit_get_devices())
         assert parsed["offline_mode"] is True
-        assert "error" in parsed
+        assert "FITBIT_MCP_OFFLINE" in parsed["error"]
 
     async def test_fitbit_sync_offline_refused(self, monkeypatch):
         monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
@@ -562,7 +562,7 @@ class TestOfflineMode:
 
         parsed = json.loads(await fitbit_sync())
         assert parsed["offline_mode"] is True
-        assert "error" in parsed
+        assert "FITBIT_MCP_OFFLINE" in parsed["error"]
 
     @patch("fitbit_mcp.helpers.FITBIT_CONFIG_PATH")
     @patch("fitbit_mcp.helpers.FITBIT_TOKENS_PATH")
@@ -586,3 +586,4 @@ class TestOfflineMode:
         parsed = json.loads(result)
         assert parsed["offline_mode"] is True
         assert "live=True" not in parsed.get("hint", "")
+        assert "host that owns the cache" in parsed.get("hint", "")

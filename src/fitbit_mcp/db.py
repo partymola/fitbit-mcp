@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS sleep (
     deep_minutes INTEGER,
     light_minutes INTEGER,
     rem_minutes INTEGER,
-    wake_minutes INTEGER
+    wake_minutes INTEGER,
+    sessions INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS weight (
@@ -121,9 +122,14 @@ CREATE TABLE IF NOT EXISTS sync_log (
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Apply additive schema migrations to older DBs. Idempotent."""
-    existing = {r["name"] for r in conn.execute("PRAGMA table_info(sync_log)").fetchall()}
-    if "last_date_attempted" not in existing:
+    sync_log_cols = {r["name"] for r in conn.execute("PRAGMA table_info(sync_log)").fetchall()}
+    if "last_date_attempted" not in sync_log_cols:
         conn.execute("ALTER TABLE sync_log ADD COLUMN last_date_attempted TEXT")
+        conn.commit()
+
+    sleep_cols = {r["name"] for r in conn.execute("PRAGMA table_info(sleep)").fetchall()}
+    if "sessions" not in sleep_cols:
+        conn.execute("ALTER TABLE sleep ADD COLUMN sessions INTEGER")
         conn.commit()
 
 
@@ -173,13 +179,27 @@ def save_exercise(conn: sqlite3.Connection, log_id: str, row: dict):
 
 
 def save_sleep(conn: sqlite3.Connection, row: dict):
+    # Default every optional column via .get() so callers that supply only a
+    # subset (e.g. the Takeout importer) store NULL rather than raising.
+    params = {
+        "date": row["date"],
+        "total_minutes": row.get("total_minutes"),
+        "efficiency": row.get("efficiency"),
+        "start_time": row.get("start_time"),
+        "end_time": row.get("end_time"),
+        "deep_minutes": row.get("deep_minutes"),
+        "light_minutes": row.get("light_minutes"),
+        "rem_minutes": row.get("rem_minutes"),
+        "wake_minutes": row.get("wake_minutes"),
+        "sessions": row.get("sessions"),
+    }
     conn.execute(
         """INSERT OR REPLACE INTO sleep
         (date, total_minutes, efficiency, start_time, end_time,
-         deep_minutes, light_minutes, rem_minutes, wake_minutes)
+         deep_minutes, light_minutes, rem_minutes, wake_minutes, sessions)
         VALUES (:date, :total_minutes, :efficiency, :start_time, :end_time,
-                :deep_minutes, :light_minutes, :rem_minutes, :wake_minutes)""",
-        row,
+                :deep_minutes, :light_minutes, :rem_minutes, :wake_minutes, :sessions)""",
+        params,
     )
 
 

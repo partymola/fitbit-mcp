@@ -81,7 +81,7 @@ SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). Tables:
 - `heart_rate` - date, resting_hr, zones (JSON)
 - `activity` - date, steps, calories_out, active_minutes, very/fairly/lightly active, sedentary, floors, distance_km
 - `exercises` - log_id, date, name, duration_min, calories, avg_hr, steps, distance_km, start_time, source, log_type
-- `sleep` - date, total_minutes, efficiency, start/end_time, deep/light/rem/wake_minutes
+- `sleep` - date, total_minutes, efficiency, start/end_time, deep/light/rem/wake_minutes, sessions (one row per night; a fragmented night's sessions are summed, `sessions` > 1 flags the split)
 - `weight` - date, weight_kg, bmi, fat_pct
 - `spo2` - date, avg, min, max
 - `hrv` - date, daily_rmssd, deep_rmssd
@@ -100,7 +100,7 @@ Fitbit API: 150 requests/hour. Activity and food_log sync use 1 call per day (no
 
 ```bash
 cd fitbit-mcp
-.venv/bin/python -m pytest tests/ -v   # 221 tests
+.venv/bin/python -m pytest tests/ -v   # 258 tests
 ```
 
 All tests use tmp SQLite and fictional data. Auto-sync is triggered in tests but fails silently (no real credentials). On a developer machine that has live credentials at `~/.config/fitbit-mcp/`, point `FITBIT_MCP_CONFIG_DIR` at an empty directory before running tests so auto-sync skips the network round-trip.

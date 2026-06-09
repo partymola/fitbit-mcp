@@ -7,41 +7,27 @@ import anyio
 from .. import api, db
 from ..helpers import format_response, parse_date, require_auth
 from ..mcp_instance import mcp
-from .sync_tools import auto_sync_if_stale
+from .sync_tools import aggregate_sleep_nights, auto_sync_if_stale
 
 
 def _fetch_live(start_date, end_date) -> list[dict]:
-    """Fetch sleep data directly from the API."""
+    """Fetch sleep data directly from the API.
+
+    Same-night sessions are aggregated into one row per night (see
+    `aggregate_sleep_nights`) so live results match the cached shape and a
+    fragmented night reports its true total rather than a single session.
+    """
     from ..config import SLEEP_MAX_RANGE_DAYS
 
-    results = {}
+    entries: list[dict] = []
     d = start_date
     while d <= end_date:
         chunk_end = min(d + timedelta(days=SLEEP_MAX_RANGE_DAYS - 1), end_date)
         path = f"/1.2/user/-/sleep/date/{d}/{chunk_end}.json"
         data = api.get(path)
-        for entry in data.get("sleep", []):
-            ds = entry.get("dateOfSleep")
-            if not ds:
-                continue
-            minutes = entry.get("minutesAsleep", 0)
-            # Keep the longest sleep entry per night
-            if ds in results and minutes <= (results[ds].get("total_minutes") or 0):
-                continue
-            stages = entry.get("levels", {}).get("summary", {})
-            results[ds] = {
-                "date": ds,
-                "total_minutes": entry.get("minutesAsleep"),
-                "efficiency": entry.get("efficiency"),
-                "start_time": entry.get("startTime"),
-                "end_time": entry.get("endTime"),
-                "deep_minutes": (stages.get("deep") or {}).get("minutes"),
-                "light_minutes": (stages.get("light") or {}).get("minutes"),
-                "rem_minutes": (stages.get("rem") or {}).get("minutes"),
-                "wake_minutes": (stages.get("wake") or {}).get("minutes"),
-            }
+        entries.extend(data.get("sleep", []))
         d = chunk_end + timedelta(days=1)
-    return sorted(results.values(), key=lambda x: x["date"])
+    return aggregate_sleep_nights(entries)
 
 
 @mcp.tool()
