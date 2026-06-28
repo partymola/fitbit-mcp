@@ -12,6 +12,9 @@ from ..helpers import format_duration, format_response, parse_date, require_auth
 from ..mcp_instance import mcp
 from .sync_tools import auto_sync_if_stale
 
+# Comma-joined valid data types, for the "unknown/unsupported type" messages.
+_VALID_TYPES = ", ".join(CACHED_DATA_TYPES)
+
 
 def _get_period_key(ds: str, period: str) -> str:
     """Map a YYYY-MM-DD date string to a period bucket key."""
@@ -474,11 +477,7 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
     }
     query_fn = query_fns.get(data_type)
     if not query_fn:
-        return {
-            "error": (
-                f"Cannot compare data_type '{data_type}'. " f"Use: {', '.join(CACHED_DATA_TYPES)}."
-            )
-        }
+        return {"error": f"Cannot compare data_type '{data_type}'. Use: {_VALID_TYPES}."}
 
     def summarize(rows, dtype):
         if not rows:
@@ -606,11 +605,7 @@ async def fitbit_trends(
             if fn:
                 result = fn(conn, s, e, period)
             else:
-                result = {
-                    "error": (
-                        f"Unknown data_type '{data_type}'. " f"Use: {', '.join(CACHED_DATA_TYPES)}."
-                    )
-                }
+                result = {"error": f"Unknown data_type '{data_type}'. Use: {_VALID_TYPES}."}
 
         conn.close()
         return result
