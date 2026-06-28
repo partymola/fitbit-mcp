@@ -521,31 +521,57 @@ def _sync_food_log(conn, start_date: date, end_date: date) -> int:
     return count
 
 
-def run_sync(data_types: list[str], days: int = 30) -> dict:
-    """Run sync outside MCP context (for CLI use). Returns results dict."""
+def run_sync(data_types: list[str], days: int = 30, since: str | None = None) -> dict:
+    """Run sync outside MCP context (for CLI use). Returns results dict.
+
+    Args:
+        data_types: data type names to sync.
+        days: history window for a cold sync (no prior data for that type).
+        since: optional "YYYY-MM-DD". When set, every type is backfilled from
+            this date, overriding the incremental resume-from-last-sync cursor
+            (and `days`). Use to pull history older than what is already cached.
+    """
     today = date.today()
+
+    since_date = None
+    if since:
+        try:
+            since_date = date.fromisoformat(since)
+        except ValueError:
+            return {
+                dtype: {
+                    "status": "error",
+                    "message": f"Invalid since date '{since}'. Use YYYY-MM-DD.",
+                }
+                for dtype in data_types
+            }
+
     conn = db.get_db()
     results = {}
 
     for dtype in data_types:
         try:
-            # Use the later of (most-recent row in table) and (most-recent
-            # successful sync's end-date). The second matters for sparse
-            # types like food_log: if the user stops logging, the data
-            # table's MAX(date) freezes and we'd otherwise re-query every
-            # day from then on, burning quota on confirmed-empty days.
-            candidates = [
-                d
-                for d in (
-                    db.get_last_synced_date(conn, dtype),
-                    db.get_last_attempted_date(conn, dtype),
-                )
-                if d
-            ]
-            if candidates:
-                start_date = date.fromisoformat(max(candidates))
+            if since_date is not None:
+                # Explicit backfill: ignore the incremental cursor entirely.
+                start_date = since_date
             else:
-                start_date = today - timedelta(days=days)
+                # Use the later of (most-recent row in table) and (most-recent
+                # successful sync's end-date). The second matters for sparse
+                # types like food_log: if the user stops logging, the data
+                # table's MAX(date) freezes and we'd otherwise re-query every
+                # day from then on, burning quota on confirmed-empty days.
+                candidates = [
+                    d
+                    for d in (
+                        db.get_last_synced_date(conn, dtype),
+                        db.get_last_attempted_date(conn, dtype),
+                    )
+                    if d
+                ]
+                if candidates:
+                    start_date = date.fromisoformat(max(candidates))
+                else:
+                    start_date = today - timedelta(days=days)
             end_date = today
 
             if dtype == "heart_rate":
@@ -637,6 +663,7 @@ def auto_sync_if_stale(data_type: str) -> None:
 async def fitbit_sync(
     data_types: str = "all",
     days: int = 30,
+    since: str | None = None,
 ) -> str:
     """Sync Fitbit health data to the local cache.
 
@@ -654,6 +681,9 @@ async def fitbit_sync(
             Comma-separated for multiple, e.g. "sleep,hrv". Default: "all".
         days: Days of history for first sync (default: 30). Ignored
             on subsequent syncs (uses last synced date).
+        since: Optional "YYYY-MM-DD" backfill date. When set, fetches from this
+            date regardless of what is already cached - use to pull history
+            older than the current cache. Overrides incremental resume and days.
 
     Returns summary of records synced per data type.
     Not for querying data - use fitbit_get_heart_rate, fitbit_get_activity,
@@ -675,5 +705,5 @@ async def fitbit_sync(
     if "all" in types:
         types = list(config.CACHED_DATA_TYPES)
 
-    results = await anyio.to_thread.run_sync(lambda: run_sync(types, days))
+    results = await anyio.to_thread.run_sync(lambda: run_sync(types, days, since=since))
     return format_response(results)

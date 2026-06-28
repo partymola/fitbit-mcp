@@ -578,6 +578,30 @@ class TestSyncCoreTemperature:
         assert len(rows) == 1
 
 
+class TestRunSyncSince:
+    def test_invalid_since_returns_error(self):
+        # Bad date is rejected before any DB/API work.
+        result = run_sync(["sleep"], since="garbage")
+        assert result["sleep"]["status"] == "error"
+        assert "YYYY-MM-DD" in result["sleep"]["message"]
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_since_overrides_cursor(self, mock_get, tmp_db, monkeypatch):
+        # run_sync opens its own connection; point it at the tmp db.
+        monkeypatch.setattr(db, "get_db", lambda *a, **k: tmp_db)
+        # Seed a recent cursor: without --since this would resume near today.
+        db.log_sync(tmp_db, "core_temperature", "ok", 0, last_date_attempted="2026-06-28")
+        mock_get.return_value = {"tempCore": []}
+
+        result = run_sync(["core_temperature"], since="2020-01-01")
+
+        assert result["core_temperature"]["status"] == "ok"
+        # The first API call starts at the --since date, not the cached cursor.
+        first_path = mock_get.call_args_list[0].args[0]
+        assert "/temp/core/date/2020-01-01/" in first_path
+        assert result["core_temperature"]["range"].startswith("2020-01-01 to ")
+
+
 class TestParseVo2Max:
     def test_numeric(self):
         assert _parse_vo2_max(40) == (40.0, 40.0)

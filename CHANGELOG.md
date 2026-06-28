@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `fitbit_get_core_temperature` - retrieves manually-logged core (body) temperature readings (e.g. a forehead/thermometer reading saved to Fitbit via "Save to Fitbit"), distinct from the device-derived nightly skin-temperature variation returned by `fitbit_get_skin_temperature`. Backed by the Fitbit `temp/core` endpoint and covered by the existing `temperature` OAuth scope (no re-auth needed). Because these are entered by hand, a single day can hold several readings - even sharing one (second-resolution) timestamp - so the `core_temperature` cache table is keyed by `(datetime, temp_celsius)`, preserving distinct same-second readings while de-duplicating exact repeats. `fitbit_sync` and `fitbit_trends` (including period comparison) now cover `core_temperature`; its trend leads with the per-period peak and a count of readings >= 38 C, since hand-logged temperatures are sampled mostly during illness and a plain average would mislead.
+- `--since YYYY-MM-DD` on `fitbit-mcp sync` (and a `since` argument on the `fitbit_sync` tool) backfills from a given date, overriding the incremental resume-from-last-sync cursor and `--days`. Use it to pull history older than what is already cached.
 
 ### Changed
 

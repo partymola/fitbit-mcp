@@ -78,6 +78,15 @@ def main():
         default="all",
         help="Comma-separated data types: all, " + ", ".join(config.CACHED_DATA_TYPES),
     )
+    sync_parser.add_argument(
+        "--since",
+        default=None,
+        help=(
+            "Backfill from this date (YYYY-MM-DD), overriding the incremental "
+            "resume-from-last-sync cursor and --days. Use to pull history older "
+            "than what is already cached."
+        ),
+    )
 
     import_parser = subparsers.add_parser(
         "import", help="Import existing Fitbit JSON data files into SQLite"
@@ -108,7 +117,7 @@ def main():
             types = list(config.CACHED_DATA_TYPES)
 
         print(f"Syncing: {', '.join(types)}")
-        results = sync_tools.run_sync(types, args.days)
+        results = sync_tools.run_sync(types, args.days, since=args.since)
         for dtype, result in results.items():
             status = result.get("status", "?")
             if status == "ok":
