@@ -11,6 +11,7 @@ from fitbit_mcp.tools.sync_tools import (
     _sync_azm,
     _sync_breathing_rate,
     _sync_cardio_fitness,
+    _sync_core_temperature,
     _sync_exercises,
     _sync_food_log,
     _sync_heart_rate,
@@ -515,6 +516,66 @@ class TestSyncSkinTemperature:
         rows = db.query_skin_temperature(tmp_db, "2026-03-15", "2026-03-15")
         assert rows[0]["nightly_relative"] == -0.3
         assert rows[0]["log_type"] == "dermal"
+
+
+class TestSyncCoreTemperature:
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_basic_sync(self, mock_get, tmp_db):
+        mock_get.return_value = {
+            "tempCore": [
+                {"dateTime": "2026-03-15T08:00:00", "value": 37.4},
+                {"dateTime": "2026-03-15T20:30:00", "value": 38.2},
+            ]
+        }
+        count = _sync_core_temperature(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
+        assert count == 2
+        rows = db.query_core_temperature(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 2
+        assert rows[0]["datetime"] == "2026-03-15T08:00:00"
+        assert rows[0]["date"] == "2026-03-15"
+        assert rows[0]["temp_celsius"] == 37.4
+        assert rows[1]["temp_celsius"] == 38.2
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_skips_entries_missing_value_or_datetime(self, mock_get, tmp_db):
+        mock_get.return_value = {
+            "tempCore": [
+                {"dateTime": "2026-03-15T08:00:00", "value": 37.4},
+                {"dateTime": "2026-03-15T09:00:00"},  # no value
+                {"value": 36.9},  # no dateTime
+            ]
+        }
+        count = _sync_core_temperature(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
+        assert count == 1
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_empty_response(self, mock_get, tmp_db):
+        mock_get.return_value = {"tempCore": []}
+        count = _sync_core_temperature(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
+        assert count == 0
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_same_timestamp_distinct_values_both_stored(self, mock_get, tmp_db):
+        mock_get.return_value = {
+            "tempCore": [
+                {"dateTime": "2026-03-15T08:00:00", "value": 37.4},
+                {"dateTime": "2026-03-15T08:00:00", "value": 38.1},
+            ]
+        }
+        count = _sync_core_temperature(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
+        assert count == 2
+        rows = db.query_core_temperature(tmp_db, "2026-03-15", "2026-03-15")
+        assert [r["temp_celsius"] for r in rows] == [37.4, 38.1]
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_resync_is_idempotent(self, mock_get, tmp_db):
+        mock_get.return_value = {"tempCore": [{"dateTime": "2026-03-15T08:00:00", "value": 37.4}]}
+        first = _sync_core_temperature(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
+        second = _sync_core_temperature(tmp_db, date(2026, 3, 15), date(2026, 3, 15))
+        # First sync inserts the row; re-sync of the same day adds nothing.
+        assert (first, second) == (1, 0)
+        rows = db.query_core_temperature(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
 
 
 class TestParseVo2Max:

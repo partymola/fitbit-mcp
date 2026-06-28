@@ -51,4 +51,28 @@ HRV_MAX_RANGE_DAYS = 30
 AZM_MAX_RANGE_DAYS = 1095
 BREATHING_RATE_MAX_RANGE_DAYS = 30
 SKIN_TEMPERATURE_MAX_RANGE_DAYS = 30
+CORE_TEMPERATURE_MAX_RANGE_DAYS = 30
 CARDIO_FITNESS_MAX_RANGE_DAYS = 30
+
+# Canonical list of cached data types - the single source of truth for the
+# sync "all" expansion (CLI + fitbit_sync), the CLI --types help, and the
+# trends/compare validation messages. Order is the sync order. Add a new
+# cached type here once; the lists derived from this update automatically.
+# (The per-type sync/trend/query dispatch maps still register each type with
+# its own handler, and the tool docstrings restate the list as static prose
+# for the LLM - those are intentionally not derived from this.)
+CACHED_DATA_TYPES = (
+    "heart_rate",
+    "activity",
+    "exercises",
+    "sleep",
+    "weight",
+    "spo2",
+    "hrv",
+    "azm",
+    "breathing_rate",
+    "skin_temperature",
+    "core_temperature",
+    "cardio_fitness",
+    "food_log",
+)

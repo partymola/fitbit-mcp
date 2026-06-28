@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import anyio
 
 from .. import db
+from ..config import CACHED_DATA_TYPES
 from ..helpers import format_duration, format_response, parse_date, require_auth
 from ..mcp_instance import mcp
 from .sync_tools import auto_sync_if_stale
@@ -313,6 +314,37 @@ def _trend_skin_temperature(conn, start_date: str, end_date: str, period: str) -
     return {"periods": periods, "data_type": "skin_temperature", "aggregation": period}
 
 
+def _trend_core_temperature(conn, start_date: str, end_date: str, period: str) -> dict:
+    rows = db.query_core_temperature(conn, start_date, end_date)
+    if not rows:
+        return {"message": "No core temperature data in cache. No data recorded for this period."}
+
+    buckets = defaultdict(list)
+    for r in rows:
+        v = r.get("temp_celsius")
+        if v is not None:
+            buckets[_get_period_key(r["date"], period)].append(v)
+
+    periods = []
+    for key in sorted(buckets.keys()):
+        vals = buckets[key]
+        periods.append(
+            {
+                "period": key,
+                "readings": len(vals),
+                # Peak and fever-reading counts are the meaningful signals here:
+                # core temps are logged by hand (usually only when ill), so the
+                # sample is sparse and biased high - avg is included but should
+                # not be read as a sustained baseline.
+                "max_temp_celsius": max(vals) if vals else None,
+                "readings_ge_38c": sum(1 for v in vals if v >= 38.0),
+                "min_temp_celsius": min(vals) if vals else None,
+                "avg_temp_celsius": _avg(vals),
+            }
+        )
+    return {"periods": periods, "data_type": "core_temperature", "aggregation": period}
+
+
 def _trend_cardio_fitness(conn, start_date: str, end_date: str, period: str) -> dict:
     rows = db.query_cardio_fitness(conn, start_date, end_date)
     if not rows:
@@ -436,6 +468,7 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
         "azm": db.query_azm,
         "breathing_rate": db.query_breathing_rate,
         "skin_temperature": db.query_skin_temperature,
+        "core_temperature": db.query_core_temperature,
         "cardio_fitness": db.query_cardio_fitness,
         "food_log": db.query_food_log,
     }
@@ -443,9 +476,8 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
     if not query_fn:
         return {
             "error": (
-                f"Cannot compare data_type '{data_type}'. Use: heart_rate, "
-                "activity, exercises, sleep, weight, spo2, hrv, azm, "
-                "breathing_rate, skin_temperature, cardio_fitness, or food_log."
+                f"Cannot compare data_type '{data_type}'. "
+                f"Use: {', '.join(CACHED_DATA_TYPES)}."
             )
         }
 
@@ -486,6 +518,13 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
         elif dtype == "skin_temperature":
             t = [r["nightly_relative"] for r in rows if r.get("nightly_relative") is not None]
             return {"count": len(rows), "avg_nightly_relative": _avg(t)}
+        elif dtype == "core_temperature":
+            t = [r["temp_celsius"] for r in rows if r.get("temp_celsius") is not None]
+            return {
+                "count": len(rows),
+                "avg_temp_celsius": _avg(t),
+                "max_temp_celsius": max(t) if t else None,
+            }
         elif dtype == "cardio_fitness":
             lo = [r["vo2_max_low"] for r in rows if r.get("vo2_max_low") is not None]
             hi = [r["vo2_max_high"] for r in rows if r.get("vo2_max_high") is not None]
@@ -521,8 +560,8 @@ async def fitbit_trends(
     Args:
         data_type: What to analyse. Options: "heart_rate", "activity",
             "exercises", "sleep", "weight", "spo2", "hrv", "azm",
-            "breathing_rate", "skin_temperature", "cardio_fitness", "food_log".
-            Default: "activity".
+            "breathing_rate", "skin_temperature", "core_temperature",
+            "cardio_fitness", "food_log". Default: "activity".
         period: Aggregation period. Options: "weekly", "monthly",
             "quarterly". Default: "monthly".
         start_date: Start date as "YYYY-MM-DD" or "365d". Default: last 12 months.
@@ -560,6 +599,7 @@ async def fitbit_trends(
                 "azm": _trend_azm,
                 "breathing_rate": _trend_breathing_rate,
                 "skin_temperature": _trend_skin_temperature,
+                "core_temperature": _trend_core_temperature,
                 "cardio_fitness": _trend_cardio_fitness,
                 "food_log": _trend_food_log,
             }
@@ -569,9 +609,8 @@ async def fitbit_trends(
             else:
                 result = {
                     "error": (
-                        f"Unknown data_type '{data_type}'. Use: heart_rate, "
-                        "activity, exercises, sleep, weight, spo2, hrv, azm, "
-                        "breathing_rate, skin_temperature, cardio_fitness, or food_log."
+                        f"Unknown data_type '{data_type}'. "
+                        f"Use: {', '.join(CACHED_DATA_TYPES)}."
                     )
                 }
 

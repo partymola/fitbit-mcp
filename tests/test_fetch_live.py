@@ -21,6 +21,7 @@ from fitbit_mcp.tools.lifetime_stats_tools import _fetch_goals, _fetch_lifetime
 from fitbit_mcp.tools.sleep_tools import _fetch_live as sleep_fetch_live
 from fitbit_mcp.tools.spo2_tools import _fetch_live as spo2_fetch_live
 from fitbit_mcp.tools.temperature_tools import _fetch_live as temperature_fetch_live
+from fitbit_mcp.tools.temperature_tools import _fetch_live_core as core_temperature_fetch_live
 from fitbit_mcp.tools.weight_tools import _fetch_live as weight_fetch_live
 
 
@@ -467,6 +468,59 @@ class TestTemperatureFetchLive:
         assert len(result) == 1
         assert result[0]["nightly_relative"] == -0.4
         assert result[0]["log_type"] == "dermal"
+
+
+class TestCoreTemperatureFetchLive:
+    @patch("fitbit_mcp.tools.temperature_tools.api.get")
+    def test_returns_entries(self, mock_get):
+        mock_get.return_value = {
+            "tempCore": [
+                {"dateTime": "2026-03-15T08:00:00", "value": 37.4},
+                {"dateTime": "2026-03-15T20:30:00", "value": 38.2},
+            ]
+        }
+        result = core_temperature_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert len(result) == 2
+        assert result[0]["datetime"] == "2026-03-15T08:00:00"
+        assert result[0]["date"] == "2026-03-15"
+        assert result[0]["temp_celsius"] == 37.4
+        assert result[1]["temp_celsius"] == 38.2
+
+    @patch("fitbit_mcp.tools.temperature_tools.api.get")
+    def test_skips_incomplete_entries(self, mock_get):
+        mock_get.return_value = {
+            "tempCore": [
+                {"dateTime": "2026-03-15T08:00:00", "value": 37.4},
+                {"dateTime": "2026-03-15T09:00:00"},  # no value
+                {"value": 36.9},  # no dateTime
+            ]
+        }
+        result = core_temperature_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert len(result) == 1
+
+    @patch("fitbit_mcp.tools.temperature_tools.api.get")
+    def test_same_timestamp_distinct_values_both_kept(self, mock_get):
+        mock_get.return_value = {
+            "tempCore": [
+                {"dateTime": "2026-03-15T08:00:00", "value": 38.1},
+                {"dateTime": "2026-03-15T08:00:00", "value": 37.4},
+            ]
+        }
+        result = core_temperature_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert len(result) == 2
+        # Sorted by (datetime, temp_celsius)
+        assert [r["temp_celsius"] for r in result] == [37.4, 38.1]
+
+    @patch("fitbit_mcp.tools.temperature_tools.api.get")
+    def test_exact_duplicate_collapsed(self, mock_get):
+        mock_get.return_value = {
+            "tempCore": [
+                {"dateTime": "2026-03-15T08:00:00", "value": 37.4},
+                {"dateTime": "2026-03-15T08:00:00", "value": 37.4},
+            ]
+        }
+        result = core_temperature_fetch_live(date(2026, 3, 15), date(2026, 3, 15))
+        assert len(result) == 1
 
 
 class TestCardioFitnessFetchLive:

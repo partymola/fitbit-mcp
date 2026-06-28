@@ -11,6 +11,7 @@ from ..config import (
     AZM_MAX_RANGE_DAYS,
     BREATHING_RATE_MAX_RANGE_DAYS,
     CARDIO_FITNESS_MAX_RANGE_DAYS,
+    CORE_TEMPERATURE_MAX_RANGE_DAYS,
     HRV_MAX_RANGE_DAYS,
     MAX_RANGE_DAYS,
     SKIN_TEMPERATURE_MAX_RANGE_DAYS,
@@ -389,6 +390,40 @@ def _sync_skin_temperature(conn, start_date: date, end_date: date) -> int:
     return count
 
 
+def _sync_core_temperature(conn, start_date: date, end_date: date) -> int:
+    """Sync manually-logged core (body) temperatures.
+
+    Unlike skin temperature - a single device-derived nightly value per day -
+    core temperatures are entered by hand (e.g. forehead-scanner readings saved
+    to Fitbit) and the endpoint returns one entry per reading, each carrying a
+    full ``YYYY-MM-DDThh:mm:ss`` timestamp. A day may therefore hold several
+    readings, so rows are keyed by timestamp rather than date.
+    """
+    count = 0
+    for chunk_start, chunk_end in _chunk_date_ranges(
+        start_date, end_date, CORE_TEMPERATURE_MAX_RANGE_DAYS
+    ):
+        path = f"/1/user/-/temp/core/date/{chunk_start}/{chunk_end}.json"
+        data = api.get(path)
+        for entry in data.get("tempCore", []):
+            dt = entry.get("dateTime")
+            value = entry.get("value")
+            if not dt or value is None:
+                continue
+            # Celsius: api.py omits Accept-Language, so Fitbit returns metric units.
+            # count reflects rows actually inserted (save de-dups exact repeats).
+            count += db.save_core_temperature(
+                conn,
+                {
+                    "datetime": dt,
+                    "date": dt[:10],
+                    "temp_celsius": value,
+                },
+            )
+        conn.commit()
+    return count
+
+
 def _parse_vo2_max(raw) -> tuple[float | None, float | None]:
     """Parse Fitbit's vo2Max field. May be a number or a range string like '39-43'."""
     if raw is None:
@@ -533,6 +568,8 @@ def run_sync(data_types: list[str], days: int = 30) -> dict:
                 count = _sync_breathing_rate(conn, start_date, end_date)
             elif dtype == "skin_temperature":
                 count = _sync_skin_temperature(conn, start_date, end_date)
+            elif dtype == "core_temperature":
+                count = _sync_core_temperature(conn, start_date, end_date)
             elif dtype == "cardio_fitness":
                 count = _sync_cardio_fitness(conn, start_date, end_date)
             elif dtype == "food_log":
@@ -612,7 +649,8 @@ async def fitbit_sync(
     Args:
         data_types: What to sync. Options: "all", "heart_rate", "activity",
             "exercises", "sleep", "weight", "spo2", "hrv", "azm",
-            "breathing_rate", "skin_temperature", "cardio_fitness", "food_log".
+            "breathing_rate", "skin_temperature", "core_temperature",
+            "cardio_fitness", "food_log".
             Comma-separated for multiple, e.g. "sleep,hrv". Default: "all".
         days: Days of history for first sync (default: 30). Ignored
             on subsequent syncs (uses last synced date).
@@ -635,20 +673,7 @@ async def fitbit_sync(
 
     types = [t.strip() for t in data_types.split(",")]
     if "all" in types:
-        types = [
-            "heart_rate",
-            "activity",
-            "exercises",
-            "sleep",
-            "weight",
-            "spo2",
-            "hrv",
-            "azm",
-            "breathing_rate",
-            "skin_temperature",
-            "cardio_fitness",
-            "food_log",
-        ]
+        types = list(config.CACHED_DATA_TYPES)
 
     results = await anyio.to_thread.run_sync(lambda: run_sync(types, days))
     return format_response(results)

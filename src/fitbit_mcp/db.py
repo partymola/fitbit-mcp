@@ -96,6 +96,15 @@ CREATE TABLE IF NOT EXISTS skin_temperature (
     log_type TEXT
 );
 
+CREATE TABLE IF NOT EXISTS core_temperature (
+    datetime TEXT NOT NULL,
+    date TEXT NOT NULL,
+    temp_celsius REAL,
+    PRIMARY KEY (datetime, temp_celsius)
+);
+
+CREATE INDEX IF NOT EXISTS idx_core_temperature_date ON core_temperature(date);
+
 CREATE TABLE IF NOT EXISTS cardio_fitness (
     date TEXT PRIMARY KEY,
     vo2_max_low REAL,
@@ -254,6 +263,23 @@ def save_skin_temperature(conn: sqlite3.Connection, row: dict):
     )
 
 
+def save_core_temperature(conn: sqlite3.Connection, row: dict) -> int:
+    """Insert one manually-logged core-temperature reading. Returns rows inserted (0 or 1).
+
+    Keyed by (datetime, temp_celsius), not date: core temperatures are logged by
+    hand and a day may hold several readings. Fitbit timestamps are only
+    second-resolution, so two genuinely distinct readings can share a timestamp -
+    keying on the (timestamp, value) pair keeps both, while INSERT OR IGNORE still
+    de-duplicates exact repeats idempotently when a boundary day is re-synced.
+    """
+    cur = conn.execute(
+        """INSERT OR IGNORE INTO core_temperature (datetime, date, temp_celsius)
+        VALUES (:datetime, :date, :temp_celsius)""",
+        row,
+    )
+    return cur.rowcount
+
+
 def save_cardio_fitness(conn: sqlite3.Connection, row: dict):
     conn.execute(
         """INSERT OR REPLACE INTO cardio_fitness (date, vo2_max_low, vo2_max_high)
@@ -308,6 +334,7 @@ _DATA_TABLE_MAP: dict[str, str] = {
     "azm": "azm",
     "breathing_rate": "breathing_rate",
     "skin_temperature": "skin_temperature",
+    "core_temperature": "core_temperature",
     "cardio_fitness": "cardio_fitness",
     "food_log": "food_log",
 }
@@ -451,6 +478,15 @@ def query_breathing_rate(conn: sqlite3.Connection, start_date: str, end_date: st
 def query_skin_temperature(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[dict]:
     rows = conn.execute(
         "SELECT * FROM skin_temperature WHERE date >= ? AND date <= ? ORDER BY date",
+        (start_date, end_date),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def query_core_temperature(conn: sqlite3.Connection, start_date: str, end_date: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM core_temperature WHERE date >= ? AND date <= ? "
+        "ORDER BY datetime, temp_celsius",
         (start_date, end_date),
     ).fetchall()
     return _rows_to_dicts(rows)

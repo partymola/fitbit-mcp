@@ -32,7 +32,7 @@ fitbit-mcp          # Start MCP server (stdio transport, used by Claude Code)
 
 | Tool | Source | Purpose |
 |------|--------|---------|
-| `fitbit_sync` | Live API -> SQLite | Incremental sync (all 12 cached data types) |
+| `fitbit_sync` | Live API -> SQLite | Incremental sync (all cached data types) |
 | `fitbit_get_heart_rate` | Cache (auto-sync) / Live | Resting HR, HR zones |
 | `fitbit_get_activity` | Cache (auto-sync) / Live | Steps, calories, active minutes, distance |
 | `fitbit_get_exercises` | Cache (auto-sync) / Live | Exercise sessions (name, duration, HR, calories) |
@@ -42,7 +42,8 @@ fitbit-mcp          # Start MCP server (stdio transport, used by Claude Code)
 | `fitbit_get_hrv` | Cache (auto-sync) / Live | Heart rate variability (RMSSD) |
 | `fitbit_get_azm` | Cache (auto-sync) / Live | Active Zone Minutes with per-zone breakdown |
 | `fitbit_get_breathing_rate` | Cache (auto-sync) / Live | Nightly breaths per minute |
-| `fitbit_get_temperature` | Cache (auto-sync) / Live | Nightly skin temperature variation (degrees C) |
+| `fitbit_get_skin_temperature` | Cache (auto-sync) / Live | Nightly skin temperature variation (degrees C) |
+| `fitbit_get_core_temperature` | Cache (auto-sync) / Live | Manually-logged core (body) temperature (degrees C) |
 | `fitbit_get_cardio_fitness` | Cache (auto-sync) / Live | VO2 Max / Cardio Fitness Score (range) |
 | `fitbit_get_food_log` | Cache (auto-sync) / Live | Daily food calories + water intake |
 | `fitbit_get_devices` | Live | Paired devices, battery level, last sync |
@@ -58,7 +59,7 @@ All `get_*` and `fitbit_trends` tools auto-sync on the first query of each day p
 - **FastMCP**: `mcp_instance.py` creates the shared `FastMCP("fitbit-mcp")` instance
 - **Auth**: `auth.py` - PKCE OAuth setup, token refresh (8-hour access tokens, 90-day refresh tokens)
 - **API**: `api.py` - GET wrapper with auto-refresh, rate limit retry, typed exceptions
-- **DB**: `db.py` - SQLite schema (12 data tables + `sync_log`), save/query helpers
+- **DB**: `db.py` - SQLite schema (one table per cached data type + `sync_log`), save/query helpers
 - **Tools**: `tools/` - domain-grouped modules; `sync_tools.py` also exports `auto_sync_if_stale(data_type)`
 - **Config**: `config.py` - paths overridable via `FITBIT_MCP_CONFIG_DIR` and `FITBIT_MCP_DB_PATH`
 
@@ -77,7 +78,10 @@ All `get_*` and `fitbit_trends` tools auto-sync on the first query of each day p
 
 ## Database
 
-SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). Tables:
+SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). The exact column
+definitions live in `SCHEMA` in `src/fitbit_mcp/db.py` (the source of truth); the
+list below is a navigational overview that also notes the non-obvious semantics.
+Tables:
 - `heart_rate` - date, resting_hr, zones (JSON)
 - `activity` - date, steps, calories_out, active_minutes, very/fairly/lightly active, sedentary, floors, distance_km
 - `exercises` - log_id, date, name, duration_min, calories, avg_hr, steps, distance_km, start_time, source, log_type
@@ -88,6 +92,7 @@ SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). Tables:
 - `azm` - date, total_minutes, fat_burn_minutes, cardio_minutes, peak_minutes
 - `breathing_rate` - date, breaths_per_min
 - `skin_temperature` - date, nightly_relative (degrees C from baseline), log_type
+- `core_temperature` - datetime (YYYY-MM-DDThh:mm:ss), date, temp_celsius; PRIMARY KEY (datetime, temp_celsius) (manually-logged body temp; keyed by timestamp+value so multiple - even same-second - readings per day are preserved while exact repeats de-dup)
 - `cardio_fitness` - date, vo2_max_low, vo2_max_high (Fitbit reports as a range)
 - `food_log` - date, calories_in, water_ml
 - `sync_log` - sync history (used by auto-sync to decide when to re-fetch)
@@ -100,7 +105,7 @@ Fitbit API: 150 requests/hour. Activity and food_log sync use 1 call per day (no
 
 ```bash
 cd fitbit-mcp
-.venv/bin/python -m pytest tests/ -v   # 258 tests
+.venv/bin/python -m pytest tests/ -v
 ```
 
 All tests use tmp SQLite and fictional data. Auto-sync is triggered in tests but fails silently (no real credentials). On a developer machine that has live credentials at `~/.config/fitbit-mcp/`, point `FITBIT_MCP_CONFIG_DIR` at an empty directory before running tests so auto-sync skips the network round-trip.

@@ -21,6 +21,7 @@ class TestSchema:
         assert "azm" in names
         assert "breathing_rate" in names
         assert "skin_temperature" in names
+        assert "core_temperature" in names
         assert "cardio_fitness" in names
         assert "food_log" in names
         assert "sync_log" in names
@@ -230,6 +231,64 @@ class TestSaveAndQuery:
         assert len(rows) == 1
         assert rows[0]["nightly_relative"] == -0.3
         assert rows[0]["log_type"] == "dermal"
+
+    def test_core_temperature_save_query(self, tmp_db):
+        db.save_core_temperature(
+            tmp_db,
+            {"datetime": "2026-03-15T08:00:00", "date": "2026-03-15", "temp_celsius": 37.4},
+        )
+        tmp_db.commit()
+        rows = db.query_core_temperature(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
+        assert rows[0]["datetime"] == "2026-03-15T08:00:00"
+        assert rows[0]["temp_celsius"] == 37.4
+
+    def test_core_temperature_multiple_readings_same_day(self, tmp_db):
+        """Several readings on one day must all survive (keyed by timestamp)."""
+        db.save_core_temperature(
+            tmp_db,
+            {"datetime": "2026-03-15T08:00:00", "date": "2026-03-15", "temp_celsius": 37.4},
+        )
+        db.save_core_temperature(
+            tmp_db,
+            {"datetime": "2026-03-15T20:30:00", "date": "2026-03-15", "temp_celsius": 38.2},
+        )
+        tmp_db.commit()
+        rows = db.query_core_temperature(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 2
+        # Ordered by timestamp
+        assert [r["temp_celsius"] for r in rows] == [37.4, 38.2]
+
+    def test_core_temperature_same_timestamp_distinct_values_both_kept(self, tmp_db):
+        """Two distinct readings sharing one second-resolution timestamp both survive."""
+        n1 = db.save_core_temperature(
+            tmp_db,
+            {"datetime": "2026-03-15T08:00:00", "date": "2026-03-15", "temp_celsius": 37.4},
+        )
+        n2 = db.save_core_temperature(
+            tmp_db,
+            {"datetime": "2026-03-15T08:00:00", "date": "2026-03-15", "temp_celsius": 38.1},
+        )
+        tmp_db.commit()
+        assert (n1, n2) == (1, 1)
+        rows = db.query_core_temperature(tmp_db, "2026-03-15", "2026-03-15")
+        # Ordered by (datetime, temp_celsius)
+        assert [r["temp_celsius"] for r in rows] == [37.4, 38.1]
+
+    def test_core_temperature_exact_duplicate_ignored(self, tmp_db):
+        """An exact (timestamp, value) repeat de-duplicates idempotently on re-save."""
+        n1 = db.save_core_temperature(
+            tmp_db,
+            {"datetime": "2026-03-15T08:00:00", "date": "2026-03-15", "temp_celsius": 37.4},
+        )
+        n2 = db.save_core_temperature(
+            tmp_db,
+            {"datetime": "2026-03-15T08:00:00", "date": "2026-03-15", "temp_celsius": 37.4},
+        )
+        tmp_db.commit()
+        assert (n1, n2) == (1, 0)
+        rows = db.query_core_temperature(tmp_db, "2026-03-15", "2026-03-15")
+        assert len(rows) == 1
 
     def test_cardio_fitness_save_query(self, tmp_db):
         db.save_cardio_fitness(

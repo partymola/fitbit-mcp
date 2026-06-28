@@ -192,6 +192,18 @@ def populated_db(tmp_db):
             },
         )
 
+    # Core temperature - 4 manual readings across 3 days (two on 2026-03-11)
+    for dt, temp in [
+        ("2026-03-10T08:00:00", 36.6),
+        ("2026-03-11T09:30:00", 37.8),
+        ("2026-03-11T18:15:00", 38.4),
+        ("2026-03-12T07:45:00", 37.1),
+    ]:
+        db.save_core_temperature(
+            tmp_db,
+            {"datetime": dt, "date": dt[:10], "temp_celsius": temp},
+        )
+
     # Cardio fitness - 3 readings
     for i in range(3):
         db.save_cardio_fitness(

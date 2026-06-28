@@ -20,6 +20,7 @@ logging.basicConfig(
 )
 
 # Import MCP instance and register all tools
+from . import config  # noqa: E402
 from .mcp_instance import mcp  # noqa: E402
 from .tools import (  # noqa: E402
     activity_tools,  # noqa: E402, F401
@@ -75,10 +76,7 @@ def main():
     sync_parser.add_argument(
         "--types",
         default="all",
-        help=(
-            "Comma-separated data types: all, heart_rate, activity, exercises, sleep, "
-            "weight, spo2, hrv, azm, breathing_rate, skin_temperature, cardio_fitness, food_log"
-        ),
+        help="Comma-separated data types: all, " + ", ".join(config.CACHED_DATA_TYPES),
     )
 
     import_parser = subparsers.add_parser(
@@ -97,8 +95,6 @@ def main():
         setup_auth()
 
     elif args.cmd == "sync":
-        from . import config
-
         if config.OFFLINE_MODE:
             print(
                 "Offline mode is on (FITBIT_MCP_OFFLINE); refusing to sync. "
@@ -109,20 +105,7 @@ def main():
 
         types = [t.strip() for t in args.types.split(",")]
         if "all" in types:
-            types = [
-                "heart_rate",
-                "activity",
-                "exercises",
-                "sleep",
-                "weight",
-                "spo2",
-                "hrv",
-                "azm",
-                "breathing_rate",
-                "skin_temperature",
-                "cardio_fitness",
-                "food_log",
-            ]
+            types = list(config.CACHED_DATA_TYPES)
 
         print(f"Syncing: {', '.join(types)}")
         results = sync_tools.run_sync(types, args.days)

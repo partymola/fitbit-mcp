@@ -8,6 +8,7 @@ from fitbit_mcp.tools.analysis_tools import (
     _get_period_key,
     _parse_compare_range,
     _trend_activity,
+    _trend_core_temperature,
     _trend_exercises,
     _trend_heart_rate,
     _trend_hrv,
@@ -157,6 +158,25 @@ class TestTrendHrv:
         assert "message" in result
 
 
+class TestTrendCoreTemperature:
+    def test_basic(self, populated_db):
+        result = _trend_core_temperature(populated_db, "2026-03-10", "2026-03-12", "monthly")
+        assert result["data_type"] == "core_temperature"
+        p = result["periods"][0]
+        # 4 manual readings across the window (two on 2026-03-11)
+        assert p["readings"] == 4
+        # values: 36.6, 37.8, 38.4, 37.1 -> avg 37.5, min 36.6, max 38.4
+        assert p["avg_temp_celsius"] == 37.5
+        assert p["min_temp_celsius"] == 36.6
+        assert p["max_temp_celsius"] == 38.4
+        # only 38.4 is >= 38 C
+        assert p["readings_ge_38c"] == 1
+
+    def test_empty(self, tmp_db):
+        result = _trend_core_temperature(tmp_db, "2026-01-01", "2026-01-31", "monthly")
+        assert "message" in result
+
+
 class TestParseCompareRange:
     def test_last_nd(self):
         result = _parse_compare_range("last_30d")
@@ -231,3 +251,9 @@ class TestComparePeriods:
     def test_compare_spo2(self, populated_db):
         result = _compare_periods(populated_db, "spo2", "2026-03 vs 2026-02")
         assert result["period_1"]["count"] == 5
+
+    def test_compare_core_temperature(self, populated_db):
+        result = _compare_periods(populated_db, "core_temperature", "2026-03 vs 2026-02")
+        assert result["period_1"]["count"] == 4
+        assert result["period_1"]["max_temp_celsius"] == 38.4
+        assert result["period_2"]["count"] == 0
