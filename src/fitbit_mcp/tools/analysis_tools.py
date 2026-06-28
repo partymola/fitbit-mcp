@@ -476,8 +476,7 @@ def _compare_periods(conn, data_type: str, compare_str: str) -> dict:
     if not query_fn:
         return {
             "error": (
-                f"Cannot compare data_type '{data_type}'. "
-                f"Use: {', '.join(CACHED_DATA_TYPES)}."
+                f"Cannot compare data_type '{data_type}'. " f"Use: {', '.join(CACHED_DATA_TYPES)}."
             )
         }
 
@@ -609,8 +608,7 @@ async def fitbit_trends(
             else:
                 result = {
                     "error": (
-                        f"Unknown data_type '{data_type}'. "
-                        f"Use: {', '.join(CACHED_DATA_TYPES)}."
+                        f"Unknown data_type '{data_type}'. " f"Use: {', '.join(CACHED_DATA_TYPES)}."
                     )
                 }
 
