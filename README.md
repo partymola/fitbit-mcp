@@ -101,6 +101,11 @@ fitbit-mcp auth         Interactive OAuth setup
 fitbit-mcp sync         Sync data to local cache
   --days N              Days of history for first sync (default: 30)
   --types TYPE,...      Data types to sync (default: all)
+  --since YYYY-MM-DD    Backfill from this date, overriding the incremental
+                        resume-from-last-sync cursor and --days
+  --until YYYY-MM-DD    Inclusive end date for a --since backfill; together
+                        they re-fetch exactly that window (e.g. to repair a
+                        gap in the middle of the cache)
 fitbit-mcp import       Import existing JSON data files
   --data-dir PATH       Directory containing JSON files
 ```
@@ -126,6 +131,8 @@ Syncs data from the Fitbit API to the local SQLite cache. Query tools call this 
 
 - `data_types` - What to sync: `all`, `heart_rate`, `activity`, `exercises`, `sleep`, `weight`, `spo2`, `hrv`, `azm`, `breathing_rate`, `skin_temperature`, `core_temperature`, `cardio_fitness`, `food_log`. Comma-separated. Default: `all`.
 - `days` - Days of history for first sync (default: 30). Subsequent syncs are incremental.
+- `since` - Optional `YYYY-MM-DD`. Backfill from this date regardless of what is already cached, overriding incremental resume and `days`.
+- `until` - Optional `YYYY-MM-DD` inclusive end date; requires `since`. Together they re-fetch and upsert exactly the `since`..`until` window - use to repair a gap in the middle of the cache without re-pulling everything up to today.
 
 ### fitbit_trends
 

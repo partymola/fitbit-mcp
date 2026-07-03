@@ -602,6 +602,75 @@ class TestRunSyncSince:
         assert result["core_temperature"]["range"].startswith("2020-01-01 to ")
 
 
+class TestRunSyncUntil:
+    def test_invalid_until_returns_error(self):
+        result = run_sync(["sleep"], since="2026-03-01", until="garbage")
+        assert result["sleep"]["status"] == "error"
+        assert "YYYY-MM-DD" in result["sleep"]["message"]
+
+    def test_until_without_since_is_rejected(self):
+        result = run_sync(["sleep"], until="2026-03-10")
+        assert result["sleep"]["status"] == "error"
+        assert "since" in result["sleep"]["message"]
+
+    def test_until_before_since_is_rejected(self):
+        result = run_sync(["sleep"], since="2026-03-10", until="2026-03-01")
+        assert result["sleep"]["status"] == "error"
+        assert "before" in result["sleep"]["message"]
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_since_until_fetches_exact_window(self, mock_get, tmp_db, monkeypatch):
+        """A mid-cache hole is re-fetched as [since, until], not [since, today]."""
+        monkeypatch.setattr(db, "get_db", lambda *a, **k: tmp_db)
+        mock_get.return_value = {"tempCore": []}
+
+        result = run_sync(["core_temperature"], since="2026-03-05", until="2026-03-09")
+
+        assert result["core_temperature"]["status"] == "ok"
+        assert result["core_temperature"]["range"] == "2026-03-05 to 2026-03-09"
+        paths = [c.args[0] for c in mock_get.call_args_list]
+        assert paths == ["/1/user/-/temp/core/date/2026-03-05/2026-03-09.json"]
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_backfill_does_not_regress_cursor(self, mock_get, tmp_path, monkeypatch):
+        """Repairing an old window must not pull the incremental cursor backwards."""
+        # run_sync closes its connection, so give it fresh ones to a shared file
+        # and verify through another (the tmp_db fixture's conn would be closed).
+        db_path = tmp_path / "test.db"
+        real_get_db = db.get_db
+        seed = real_get_db(db_path)
+        db.log_sync(seed, "core_temperature", "ok", 0, last_date_attempted="2026-06-28")
+        seed.commit()
+        seed.close()
+        monkeypatch.setattr(db, "get_db", lambda *a, **k: real_get_db(db_path))
+        mock_get.return_value = {"tempCore": []}
+
+        run_sync(["core_temperature"], since="2026-03-05", until="2026-03-09")
+
+        verify = real_get_db(db_path)
+        assert db.get_last_attempted_date(verify, "core_temperature") == "2026-06-28"
+        verify.close()
+
+    @patch("fitbit_mcp.tools.sync_tools.api.get")
+    def test_future_until_capped_at_today(self, mock_get, tmp_path, monkeypatch):
+        """A future end date is capped so the cursor never advances past today."""
+        db_path = tmp_path / "test.db"
+        real_get_db = db.get_db
+        real_get_db(db_path).close()  # create schema
+        monkeypatch.setattr(db, "get_db", lambda *a, **k: real_get_db(db_path))
+        mock_get.return_value = {"tempCore": []}
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        future = (date.today() + timedelta(days=30)).isoformat()
+
+        result = run_sync(["core_temperature"], since=yesterday, until=future)
+
+        assert result["core_temperature"]["status"] == "ok"
+        assert result["core_temperature"]["range"].endswith(f"to {date.today().isoformat()}")
+        verify = real_get_db(db_path)
+        assert db.get_last_attempted_date(verify, "core_temperature") == date.today().isoformat()
+        verify.close()
+
+
 class TestParseVo2Max:
     def test_numeric(self):
         assert _parse_vo2_max(40) == (40.0, 40.0)

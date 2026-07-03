@@ -521,7 +521,12 @@ def _sync_food_log(conn, start_date: date, end_date: date) -> int:
     return count
 
 
-def run_sync(data_types: list[str], days: int = 30, since: str | None = None) -> dict:
+def run_sync(
+    data_types: list[str],
+    days: int = 30,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict:
     """Run sync outside MCP context (for CLI use). Returns results dict.
 
     Args:
@@ -530,21 +535,34 @@ def run_sync(data_types: list[str], days: int = 30, since: str | None = None) ->
         since: optional "YYYY-MM-DD". When set, every type is backfilled from
             this date, overriding the incremental resume-from-last-sync cursor
             (and `days`). Use to pull history older than what is already cached.
+        until: optional "YYYY-MM-DD" inclusive end date; requires `since`.
+            Together they re-fetch and upsert exactly the [since, until]
+            window - use to repair a hole in the middle of the cache without
+            re-pulling everything from the hole to today. Capped at today.
     """
     today = date.today()
+
+    def _all_error(message: str) -> dict:
+        return {dtype: {"status": "error", "message": message} for dtype in data_types}
 
     since_date = None
     if since:
         try:
             since_date = date.fromisoformat(since)
         except ValueError:
-            return {
-                dtype: {
-                    "status": "error",
-                    "message": f"Invalid since date '{since}'. Use YYYY-MM-DD.",
-                }
-                for dtype in data_types
-            }
+            return _all_error(f"Invalid since date '{since}'. Use YYYY-MM-DD.")
+
+    until_date = None
+    if until:
+        try:
+            until_date = date.fromisoformat(until)
+        except ValueError:
+            return _all_error(f"Invalid until date '{until}'. Use YYYY-MM-DD.")
+        if since_date is None:
+            return _all_error("'until' requires 'since' to define the backfill window.")
+        if until_date < since_date:
+            return _all_error(f"'until' ({until}) is before 'since' ({since}).")
+        until_date = min(until_date, today)
 
     conn = db.get_db()
     results = {}
@@ -572,7 +590,7 @@ def run_sync(data_types: list[str], days: int = 30, since: str | None = None) ->
                     start_date = date.fromisoformat(max(candidates))
                 else:
                     start_date = today - timedelta(days=days)
-            end_date = today
+            end_date = until_date if until_date is not None else today
 
             if dtype == "heart_rate":
                 count = _sync_heart_rate(conn, start_date, end_date)
@@ -664,6 +682,7 @@ async def fitbit_sync(
     data_types: str = "all",
     days: int = 30,
     since: str | None = None,
+    until: str | None = None,
 ) -> str:
     """Sync Fitbit health data to the local cache.
 
@@ -684,6 +703,10 @@ async def fitbit_sync(
         since: Optional "YYYY-MM-DD" backfill date. When set, fetches from this
             date regardless of what is already cached - use to pull history
             older than the current cache. Overrides incremental resume and days.
+        until: Optional "YYYY-MM-DD" inclusive end date; requires since.
+            Together they re-fetch and upsert exactly the since..until window -
+            use to repair a gap in the middle of the cache without re-pulling
+            everything from the gap to today.
 
     Returns summary of records synced per data type.
     Not for querying data - use fitbit_get_heart_rate, fitbit_get_activity,
@@ -705,5 +728,7 @@ async def fitbit_sync(
     if "all" in types:
         types = list(config.CACHED_DATA_TYPES)
 
-    results = await anyio.to_thread.run_sync(lambda: run_sync(types, days, since=since))
+    results = await anyio.to_thread.run_sync(
+        lambda: run_sync(types, days, since=since, until=until)
+    )
     return format_response(results)

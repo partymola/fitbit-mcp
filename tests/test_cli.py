@@ -36,6 +36,28 @@ def test_version_flag_does_not_mask_invalid_subcommand_args(capsys):
     assert f"fitbit-mcp {version('fitbit-mcp')}" not in captured.out
 
 
+def test_sync_passes_since_and_until_to_run_sync(monkeypatch):
+    captured = {}
+
+    def fake_run_sync(types, days, since=None, until=None):
+        captured.update(types=types, days=days, since=since, until=until)
+        return {"sleep": {"status": "ok", "records": 0, "range": ""}}
+
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+    monkeypatch.setattr(cli.sync_tools, "run_sync", fake_run_sync)
+    argv = ["fitbit-mcp", "sync", "--types", "sleep"]
+    argv += ["--since", "2026-03-05", "--until", "2026-03-09"]
+    with patch("sys.argv", argv):
+        cli.main()
+
+    assert captured == {
+        "types": ["sleep"],
+        "days": 30,
+        "since": "2026-03-05",
+        "until": "2026-03-09",
+    }
+
+
 def test_sync_refuses_in_offline_mode(capsys, monkeypatch):
     monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
     with patch("sys.argv", ["fitbit-mcp", "sync"]):
