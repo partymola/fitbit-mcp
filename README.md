@@ -51,10 +51,16 @@ Designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and o
 ### 1. Install
 
 ```bash
-pip install .
+pip install fitbit-mcp
 ```
 
-Or for development:
+Or run it without installing:
+
+```bash
+uvx fitbit-mcp
+```
+
+For development from a clone:
 
 ```bash
 pip install -e ".[dev]"
@@ -237,8 +243,8 @@ Expected file names: `heart_rate.json`, `activity.json`, `exercises.json`, `slee
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the test workflow, and the pre-commit hook. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+See [CONTRIBUTING.md](https://github.com/partymola/fitbit-mcp/blob/main/CONTRIBUTING.md) for development setup, the test workflow, and the pre-commit hook. Changes are tracked in [CHANGELOG.md](https://github.com/partymola/fitbit-mcp/blob/main/CHANGELOG.md).
 
 ## License
 
-[GPL-3.0-or-later](LICENSE)
+[GPL-3.0-or-later](https://github.com/partymola/fitbit-mcp/blob/main/LICENSE)
