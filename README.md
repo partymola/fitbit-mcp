@@ -17,7 +17,7 @@ Designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and o
 - **MCP tools** - Sync, query (cached data types plus live-only devices/lifetime/goals), and trend analysis
 - **Live mode** - Bypass cache and query the API directly
 - **CLI** - Auth setup, sync, and JSON import from the command line
-- **Rate limit handling** - Automatic retry on 429 responses
+- **Rate limit handling** - Activity and food log syncs sleep and retry on 429; other data types report `rate_limited` and resume on the next sync
 
 ## Data types
 
@@ -43,7 +43,7 @@ Designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and o
 
 ## Requirements
 
-- Python 3.13+
+- Python 3.13+ (tested on 3.13 and 3.14 in CI)
 - A [Fitbit developer account](https://dev.fitbit.com/apps) with a registered personal app
 
 ## Setup
@@ -203,7 +203,7 @@ Keeping the cache fresh is then the syncing host's job. Unset
 
 ## Rate limits
 
-The Fitbit API allows 150 requests per hour. The sync tool handles rate limits automatically, but be aware:
+The Fitbit API allows 150 requests per hour. Activity and food log syncs sleep and retry automatically on a 429; the date-range data types instead mark that sync as `rate_limited` and pick up again on the next run. Be aware:
 
 - Activity and food log syncs use 1 API call per day (no date-range endpoint available)
 - A 30-day initial sync of either uses ~30 of your 150/hour quota
@@ -222,8 +222,7 @@ This project includes a pre-commit hook (`scripts/check-no-data.sh`) that preven
 Install it after cloning:
 
 ```bash
-cp scripts/check-no-data.sh .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
+ln -sf ../../scripts/check-no-data.sh .git/hooks/pre-commit
 ```
 
 ## Importing existing data
@@ -234,7 +233,7 @@ If you have existing Fitbit data as JSON files (e.g. from a previous export or s
 fitbit-mcp import --data-dir /path/to/json/files/
 ```
 
-Expected file names: `heart_rate.json`, `activity.json`, `exercises.json`, `sleep.json`, `weight.json`, `spo2.json`, `hrv.json`. See `src/fitbit_mcp/importer.py` for the expected JSON format.
+Expected file names: `heart_rate.json`, `activity.json`, `exercises.json`, `sleep.json`, `weight.json`, `spo2.json`, `hrv.json`. See `src/fitbit_mcp/importer.py` for the expected JSON format. Import currently covers these seven types only; the newer types (AZM, breathing rate, skin/core temperature, cardio fitness, food log) are populated via `sync`, not import.
 
 ## Contributing
 
