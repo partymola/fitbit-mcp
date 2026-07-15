@@ -11,6 +11,7 @@ even though distance stays in km.
 
 import json
 import logging
+import time
 import urllib.error
 import urllib.request
 
@@ -55,6 +56,7 @@ def get(path: str, retries: int = 3) -> dict:
     - Automatic token refresh before each call (5-min buffer)
     - 401: refresh token and retry once
     - 429: raise FitbitRateLimitError with reset seconds
+    - Transient network errors / read timeouts: retry with exponential backoff
     - Other non-200: raise FitbitAPIError
 
     Returns the parsed JSON response body.
@@ -77,7 +79,7 @@ def get(path: str, retries: int = 3) -> dict:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode())
 
         except urllib.error.HTTPError as e:
@@ -101,7 +103,15 @@ def get(path: str, retries: int = 3) -> dict:
                 pass
             raise FitbitAPIError(f"API error {e.code} for {path}: {body}")
 
-        except urllib.error.URLError as e:
-            raise FitbitAPIError("Network error. Check your connection.") from e
+        # A read timeout raises bare TimeoutError (not wrapped in URLError); a
+        # connection-level failure raises URLError. Both are transient for an
+        # idempotent GET, so retry with backoff (2s, 4s) before giving up.
+        except (TimeoutError, urllib.error.URLError) as e:
+            if attempt < retries - 1:
+                backoff = 2 ** (attempt + 1)
+                logger.warning("Network error (%s), retrying in %ss", e, backoff)
+                time.sleep(backoff)
+                continue
+            raise FitbitAPIError(f"Network error after {retries} attempts: {e}") from e
 
     raise FitbitAuthError("Authentication failed after retry. Run: fitbit-mcp auth")
