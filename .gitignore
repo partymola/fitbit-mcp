@@ -16,4 +16,3 @@ dist/
 build/
 *.egg-info/
 src/*.egg-info/
-uv.lock
