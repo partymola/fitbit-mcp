@@ -23,7 +23,7 @@ The `scripts/check-no-data.sh` pre-commit hook rejects database files, config se
 ## Architecture
 
 - **Entry point**: `src/fitbit_mcp/cli.py` - routes `auth`/`sync`/`import` subcommands or starts the MCP stdio server. `sync` takes `--since`/`--until` to backfill or re-fetch a date range; `import` (backed by `importer.py`) bulk-loads exported data
-- **FastMCP**: `mcp_instance.py` creates the shared `FastMCP("fitbit-mcp")` instance
+- **MCP server**: `mcp_instance.py` creates the shared `MCPServer("fitbit-mcp")` instance
 - **Auth**: `auth.py` - PKCE OAuth setup and token refresh (8-hour access tokens, 90-day refresh tokens). Scopes are `FITBIT_SCOPES` in `config.py`; after widening them, re-run `fitbit-mcp auth`
 - **API**: `api.py` - GET wrapper with auto-refresh and typed exceptions. Note: only the two per-day-loop syncs (`_sync_activity`, `_sync_food_log`) sleep-and-retry on 429; range-endpoint types surface a `rate_limited` status and resume on the next sync
 - **DB**: `db.py` - SQLite schema (one table per cached data type + `sync_log`), save/query helpers

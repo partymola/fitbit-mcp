@@ -1,5 +1,5 @@
-"""Shared FastMCP instance for the Fitbit MCP server."""
+"""Shared MCP server instance for the Fitbit MCP server."""
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-mcp = FastMCP("fitbit-mcp")
+mcp = MCPServer("fitbit-mcp")
