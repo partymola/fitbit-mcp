@@ -5,6 +5,17 @@ import pytest
 from fitbit_mcp import db
 
 
+@pytest.fixture(autouse=True)
+def _isolate_from_ambient_env(monkeypatch):
+    """Keep the developer's own environment out of every test.
+
+    A shell that exports these - and one that syncs Fitbit data usually does -
+    otherwise changes what the suite asserts against.
+    """
+    for var in ("FITBIT_MCP_OFFLINE", "FITBIT_MCP_CONFIG_DIR", "FITBIT_MCP_DB_PATH"):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def tmp_db(tmp_path):
     """Create a temporary SQLite database with the fitbit schema."""

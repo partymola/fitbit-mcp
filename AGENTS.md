@@ -22,7 +22,7 @@ The `scripts/check-no-data.sh` pre-commit hook rejects database files, config se
 
 ## Architecture
 
-- **Entry point**: `src/fitbit_mcp/cli.py` - routes `auth`/`sync`/`import` subcommands or starts the MCP stdio server. `sync` takes `--since`/`--until` to backfill or re-fetch a date range; `import` (backed by `importer.py`) bulk-loads exported data
+- **Entry point**: `src/fitbit_mcp/cli.py` - routes `auth`/`sync`/`import`/`doctor` subcommands or starts the MCP stdio server. `sync` takes `--since`/`--until` to backfill or re-fetch a date range; `import` (backed by `importer.py`) bulk-loads exported data
 - **MCP server**: `mcp_instance.py` creates the shared `MCPServer("fitbit-mcp")` instance
 - **Auth**: `auth.py` - PKCE OAuth setup and token refresh (8-hour access tokens, 90-day refresh tokens). Scopes are `FITBIT_SCOPES` in `config.py`; after widening them, re-run `fitbit-mcp auth`
 - **API**: `api.py` - GET wrapper with auto-refresh and typed exceptions. Note: only the two per-day-loop syncs (`_sync_activity`, `_sync_food_log`) sleep-and-retry on 429; range-endpoint types surface a `rate_limited` status and resume on the next sync
@@ -30,6 +30,7 @@ The `scripts/check-no-data.sh` pre-commit hook rejects database files, config se
 - **Tools**: `tools/` - domain-grouped modules; `sync_tools.py` also exports `auto_sync_if_stale(data_type)`
 - **Helpers**: `helpers.py` - `require_auth` (auth-gate decorator on every tool), plus `format_response`/`parse_date`
 - **Config**: `config.py` - paths overridable via `FITBIT_MCP_CONFIG_DIR` and `FITBIT_MCP_DB_PATH`; `FITBIT_MCP_OFFLINE` for cache-only mode
+- **Doctor**: `doctor.py` - the `doctor` subcommand. Every check is offline and read-only, and two properties are load-bearing rather than incidental: it never opens the database through `db.get_db()` (which would create it and destroy the evidence for the wrong-path and stale-cache checks), and it imports only `config` and `db` - never `auth` or `api`, so no code path can rotate a refresh token that another host owns. Keep both true when adding a check
 
 ## Auto-sync behaviour
 
@@ -60,4 +61,13 @@ SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). The exact column d
 .venv/bin/python -m pytest tests/ -v
 ```
 
-All tests use tmp SQLite and fictional data. Auto-sync is triggered in tests but fails silently (no real credentials). On a developer machine that has live credentials at `~/.config/fitbit-mcp/`, point `FITBIT_MCP_CONFIG_DIR` at an empty directory before running tests so auto-sync skips the network round-trip.
+All tests use tmp SQLite and fictional data. Auto-sync is triggered in tests but fails silently (no real credentials).
+
+On a machine that has live credentials, isolate them by pointing `HOME` at a throwaway directory, so the XDG defaults resolve somewhere empty and auto-sync skips the network round-trip:
+
+```bash
+FAKE=$(mktemp -d)
+env -u FITBIT_MCP_CONFIG_DIR -u FITBIT_MCP_DB_PATH HOME="$FAKE" .venv/bin/python -m pytest tests/ -q
+```
+
+Do not isolate by setting `FITBIT_MCP_CONFIG_DIR` to an empty directory: `test_default_paths_exist` asserts the *default* config directory is named `fitbit-mcp`, and the override makes it the temp directory's name instead, so that test fails for a reason that has nothing to do with the change under test.

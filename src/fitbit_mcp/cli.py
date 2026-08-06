@@ -4,6 +4,7 @@ Usage:
     fitbit-mcp                Start the MCP server (stdio transport)
     fitbit-mcp -V, --version  Print the installed package version
     fitbit-mcp auth           Interactive OAuth setup
+    fitbit-mcp doctor         Check the setup and report what needs fixing
     fitbit-mcp sync           Run data sync (for cron/systemd use)
     fitbit-mcp import         Import existing JSON data files into SQLite
 """
@@ -68,6 +69,11 @@ def main():
     auth_parser = subparsers.add_parser("auth", help="Interactive OAuth setup")
     _add_version_argument(auth_parser)
 
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Check the setup and report what needs fixing"
+    )
+    _add_version_argument(doctor_parser)
+
     sync_parser = subparsers.add_parser("sync", help="Sync Fitbit data to local SQLite cache")
     _add_version_argument(sync_parser)
     sync_parser.add_argument(
@@ -111,6 +117,11 @@ def main():
         from .auth import setup_auth
 
         setup_auth()
+
+    elif args.cmd == "doctor":
+        from .doctor import run_doctor
+
+        sys.exit(run_doctor())
 
     elif args.cmd == "sync":
         if config.OFFLINE_MODE:

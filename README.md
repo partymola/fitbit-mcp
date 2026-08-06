@@ -107,6 +107,7 @@ fitbit-mcp sync --days 30
 fitbit-mcp              Start the MCP server (stdio transport)
 fitbit-mcp -V, --version  Print the installed package version
 fitbit-mcp auth         Interactive OAuth setup
+fitbit-mcp doctor       Check the setup and report what needs fixing
 fitbit-mcp sync         Sync data to local cache
   --days N              Days of history for first sync (default: 30)
   --types TYPE,...      Data types to sync (default: all)

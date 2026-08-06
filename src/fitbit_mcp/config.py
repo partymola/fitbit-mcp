@@ -15,12 +15,12 @@ DB_PATH = Path(os.environ.get("FITBIT_MCP_DB_PATH", _DEFAULT_DB_PATH))
 # makes no live API calls - it serves the local SQLite cache only. Useful for
 # multi-host setups (one host syncs, others read the shared cache), CI, and
 # privacy. See the "Offline / cache-only mode" section in the README.
-OFFLINE_MODE = os.environ.get("FITBIT_MCP_OFFLINE", "").strip().lower() in (
-    "1",
-    "true",
-    "yes",
-    "on",
-)
+OFFLINE_TRUTHY_VALUES = ("1", "true", "yes", "on")
+# Only meaningful to `doctor`, which warns about a value in neither set - those
+# are typos that silently leave offline mode off. Anything here reads as "off"
+# deliberately and must not be reported as a mistake.
+OFFLINE_FALSY_VALUES = ("0", "false", "no", "off")
+OFFLINE_MODE = os.environ.get("FITBIT_MCP_OFFLINE", "").strip().lower() in OFFLINE_TRUTHY_VALUES
 
 # Credential files
 FITBIT_CONFIG_PATH = CONFIG_DIR / "fitbit_config.json"
