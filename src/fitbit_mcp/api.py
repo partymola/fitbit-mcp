@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 
 from . import config
-from .auth import refresh_token
+from .auth import RefreshNetworkError, TokenRefused, refresh_token
 from .config import FITBIT_API_BASE
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,19 @@ def get(path: str, retries: int = 3) -> dict:
         )
 
     for attempt in range(retries):
-        token = refresh_token()
+        # refresh_token reports its documented failures with builtins, which
+        # run_sync does not classify; translated here, at its only call site.
+        # The messages are fixed rather than built from the original, which can
+        # carry a path or file content into the sync log.
+        try:
+            token = refresh_token()
+        except TokenRefused as e:
+            raise FitbitAuthError("Could not obtain an access token. Run: fitbit-mcp auth") from e
+        except RefreshNetworkError as e:
+            # Not an auth failure: an unreachable server says nothing about the
+            # credentials, and advising re-auth would rotate a token file the
+            # syncing host owns.
+            raise FitbitAPIError("Network error. Check your connection.") from e
         url = f"{FITBIT_API_BASE}{path}"
         req = urllib.request.Request(
             url,

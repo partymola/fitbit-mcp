@@ -32,6 +32,32 @@ from .config import (
 
 logger = logging.getLogger(__name__)
 
+
+# RFC 6749 defines the token endpoint's refusals as 400, with 401 for a bad
+# client. 403 is deliberately absent: a WAF or bot-protection block returns it
+# with no opinion about the grant, and this client already reads 403 on a data
+# request as something else entirely.
+_REFUSAL_CODES = frozenset({400, 401})
+
+
+class TokenRefused(RuntimeError):
+    """The server judged the credentials and rejected them.
+
+    The only failure that warrants telling the user to re-authorise, which
+    rewrites the token file the syncing host owns.
+    """
+
+
+class RefreshNetworkError(RuntimeError):
+    """The refresh request never got an answer.
+
+    Subclasses RuntimeError so existing callers are unaffected, but is
+    distinguishable: an unreachable server says nothing about whether the
+    credentials are still good, and telling the user to re-authorise would
+    rotate a token file another host may own.
+    """
+
+
 # In-memory token cache to avoid re-reading JSON files on every API call
 _cached_tokens = None
 _cached_config = None
@@ -48,7 +74,20 @@ def _save_json(path, data):
 
 
 def _load_json(path):
-    return json.loads(path.read_text())
+    """Read a credential file as a dict, or say why the credentials are unusable.
+
+    Classified here rather than left to the caller: a file that is absent,
+    unreadable or not a JSON object means there are no usable credentials,
+    which is a refusal - unlike a transport failure, it will not clear on its
+    own and the user does have to re-authorise.
+    """
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        raise TokenRefused(f"{path.name} is missing or unreadable. Run: fitbit-mcp auth") from e
+    if not isinstance(data, dict):
+        raise TokenRefused(f"{path.name} is malformed. Run: fitbit-mcp auth")
+    return data
 
 
 def _generate_pkce():
@@ -58,7 +97,7 @@ def _generate_pkce():
     return verifier, challenge
 
 
-def refresh_token() -> str:
+def _refresh_token() -> str:
     """Return a valid access token, refreshing if expired.
 
     Checks expiry with a 5-minute buffer. If expired, uses the refresh_token
@@ -75,12 +114,17 @@ def refresh_token() -> str:
         if _cached_config is None:
             _cached_config = _load_json(FITBIT_CONFIG_PATH)
 
+        # A non-numeric expiry - hand-edited, or half-repaired - counts as
+        # expired rather than raising on the comparison, so the refresh below
+        # decides.
         expires_at = _cached_tokens.get("expires_at", 0)
+        if not isinstance(expires_at, (int, float)) or isinstance(expires_at, bool):
+            expires_at = 0
         if time.time() < expires_at - 300:
             return _cached_tokens["access_token"]
 
         if not _cached_tokens.get("refresh_token"):
-            raise RuntimeError("Token expired and no refresh token. Run: fitbit-mcp auth")
+            raise TokenRefused("Token expired and no refresh token. Run: fitbit-mcp auth")
 
         data = urlencode(
             {
@@ -101,12 +145,32 @@ def refresh_token() -> str:
 
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
-                new_tokens = json.loads(resp.read().decode())
-        except urllib.error.URLError as e:
-            raise RuntimeError("Token refresh failed. Run: fitbit-mcp auth") from e
+                raw = resp.read().decode()
+        except urllib.error.HTTPError as e:
+            # Checked before OSError, which it subclasses. Listed by what the
+            # code says about the credentials rather than by range: a bad grant
+            # is refused with 400/401/403, while 429 is the rate limit this API
+            # applies liberally and carries no judgement. Answering that with
+            # "re-authorise" rotates a token file the syncing host owns.
+            if e.code in _REFUSAL_CODES:
+                raise TokenRefused("Token refresh failed. Run: fitbit-mcp auth") from e
+            raise RefreshNetworkError("Fitbit could not answer the refresh request.") from e
+        except OSError as e:
+            # Not just URLError: urlopen wraps only connect-phase failures in
+            # it, so a read timeout or a reset connection arrives bare. Those
+            # are the commonest network failures, and classing them as auth
+            # would answer a dropped connection by rotating a shared token file.
+            raise RefreshNetworkError("Could not reach Fitbit to refresh the token.") from e
 
-        if "access_token" not in new_tokens:
-            raise RuntimeError("Token refresh failed. Run: fitbit-mcp auth")
+        try:
+            new_tokens = json.loads(raw)
+        except ValueError as e:
+            # A proxy or captive portal answering 200 with HTML is a network
+            # condition, not a rejected credential.
+            raise RefreshNetworkError("Fitbit returned an unreadable response.") from e
+
+        if not isinstance(new_tokens, dict) or not new_tokens.get("access_token"):
+            raise TokenRefused("Token refresh failed. Run: fitbit-mcp auth")
 
         _cached_tokens = {
             "access_token": new_tokens["access_token"],
@@ -117,6 +181,30 @@ def refresh_token() -> str:
         _save_json(FITBIT_TOKENS_PATH, _cached_tokens)
         logger.info("Token refreshed successfully")
         return _cached_tokens["access_token"]
+
+
+def refresh_token() -> str:
+    """Return a valid access token, refreshing if expired.
+
+    The boundary that classifies every way obtaining a token can fail. Only
+    TokenRefused means the credentials were rejected; everything else becomes
+    RefreshNetworkError, by construction rather than by listing the exception
+    types that happen to occur. Enumerating them is what went wrong before:
+    each round of fixes found another type nobody had thought of - a bare
+    OSError, an http.client exception that is not an OSError at all, a decode
+    failure that is a ValueError - and each one was graded a dead credential.
+
+    A bug inside the refresh therefore reports as a network failure rather
+    than a refusal. That is the safe direction: it is still recorded and still
+    visible, and it does not tell anyone to rotate a shared token file.
+    """
+    try:
+        return _refresh_token()
+    except (TokenRefused, RefreshNetworkError):
+        raise
+    except Exception as e:
+        logger.error("Token refresh failed: %s", type(e).__name__)
+        raise RefreshNetworkError("Could not obtain a token from Fitbit.") from e
 
 
 def invalidate_token_cache():

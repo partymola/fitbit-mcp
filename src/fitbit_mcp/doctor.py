@@ -620,7 +620,13 @@ def check_sync_health() -> list[Finding]:
         return [Finding("sync log", OK, "no failures recorded")]
 
     types = ", ".join(sorted(r["data_type"] for r in failing))
-    auth = [r for r in failing if r["status"] == "auth_error"]
+    # Rows written before auth failures got their own status say "error" with
+    # a note that starts "auth:". Without this a database that stopped syncing
+    # weeks ago still grades WARN after the upgrade - and a host whose syncing
+    # has stopped is exactly the one that never writes a corrected row.
+    auth = [
+        r for r in failing if r["status"] == "auth_error" or (r["notes"] or "").startswith("auth:")
+    ]
     detail = (
         f"Last sync failed for: {types} ({'auth' if auth else 'error'}, "
         f"most recent {max(r['synced_at'] for r in failing)}). Auto-sync "

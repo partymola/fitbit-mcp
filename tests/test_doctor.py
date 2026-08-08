@@ -12,6 +12,7 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from datetime import date, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -745,3 +746,71 @@ def test_an_empty_path_variable_is_not_reported_as_the_default(setup_paths, monk
     detail = _findings_named(doctor.check_environment(), "database path")[0].detail
     assert "default" not in detail
     assert "empty" in detail
+
+
+def test_a_dead_token_fails_rather_than_warns(setup_paths):
+    """A revoked token is the failure that will not clear itself.
+
+    sync_tools logged these as "error", which doctor grades WARN, so a setup
+    that had not synced for weeks reported "No blocking problems" and exited
+    zero.
+    """
+    _, db_path = setup_paths
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = db.get_db(db_path)
+    db.log_sync(conn, "sleep", "auth_error", notes="could not obtain a token")
+    conn.commit()
+    conn.close()
+
+    findings = doctor.check_sync_health()
+    assert any(f.severity == doctor.FAIL for f in findings)
+
+
+def test_a_sync_auth_failure_lands_as_the_status_doctor_grades_as_auth(setup_paths, monkeypatch):
+    """The writer and the reader of sync_log.status must agree on the word.
+
+    Exercised through run_sync rather than by reading its source, so a change
+    to either side breaks this rather than passing a grep. The connection is
+    pinned explicitly: db.py binds DB_PATH at import, so patching config alone
+    would send run_sync to a different database than doctor reads.
+    """
+    from fitbit_mcp import api
+    from fitbit_mcp.tools import sync_tools
+
+    _, db_path = setup_paths
+    conn = db.get_db(db_path)
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+    monkeypatch.setattr(sync_tools.db, "get_db", lambda *a, **k: conn)
+    monkeypatch.setattr(
+        sync_tools.api, "get", MagicMock(side_effect=api.FitbitAuthError("no token"))
+    )
+
+    sync_tools.run_sync(["sleep"], days=1)
+
+    # run_sync closes the connection it was given. Read back with sqlite3
+    # directly: db.get_db is monkeypatched above, so it would hand back the
+    # same closed connection.
+    reopened = sqlite3.connect(db_path)
+    statuses = {r[0] for r in reopened.execute("SELECT status FROM sync_log").fetchall()}
+    reopened.close()
+    assert "auth_error" in statuses
+
+    findings = doctor.check_sync_health()
+    assert any(f.severity == doctor.FAIL for f in findings)
+
+
+def test_a_dead_token_recorded_before_the_upgrade_still_fails(setup_paths):
+    """Rows written by earlier versions say "error" with an "auth:" note.
+
+    A host whose syncing has stopped never writes a corrected row, so without
+    this the upgrade leaves the very case it was meant to surface reading as
+    a warning.
+    """
+    _, db_path = setup_paths
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = db.get_db(db_path)
+    db.log_sync(conn, "sleep", "error", notes="auth: token refresh failed")
+    conn.commit()
+    conn.close()
+
+    assert any(f.severity == doctor.FAIL for f in doctor.check_sync_health())

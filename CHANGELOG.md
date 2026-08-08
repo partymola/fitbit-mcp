@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Every way of failing to obtain an access token is now classified, and reaches callers as one of two outcomes rather than escaping. Only a refusal is an authentication failure: HTTP 400 or 401, a response with no usable token, or credentials that are missing, unreadable or malformed. Everything else is a network error - an unreachable server, a read timeout, a reset connection, a truncated or non-HTTP response, a body that will not decode, a 403, a rate limit, and a 5xx.
+
+  The classification is made where the token is obtained, with a catch-all at that boundary, so an unanticipated failure is a network error by construction rather than by listing exception types. That distinction is the whole point: an authentication failure tells the user to re-authorise, which rewrites the token file the syncing host owns, so an unrecognised condition is better under-diagnosed than answered by rotating a working token. A bug in the refresh path therefore reports as a network failure - still recorded, still visible, but not acted on destructively.
+- A sync that fails on authentication is recorded in `sync_log` as `auth_error` rather than `error`. `doctor` grades the two differently - a dead token needs a person, an API error usually clears itself - but nothing wrote the status it looks for, so its authentication branch never ran and a revoked token was reported as a warning with exit status zero. Rows written by earlier versions are recognised too, so an upgrade does not have to wait for a sync that is not happening.
+
 ## [0.5.1] - 2026-08-08
 
 ### Fixed

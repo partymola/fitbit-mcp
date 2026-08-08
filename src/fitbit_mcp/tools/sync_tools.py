@@ -637,9 +637,11 @@ def run_sync(
             db.log_sync(conn, dtype, "partial", notes="rate limited")
             results[dtype] = {"status": "rate_limited", "message": str(e)}
         except api.FitbitAuthError as e:
-            # Log an error row so a dead/expired token is visible in sync_log
-            # and the CLI sync can exit non-zero.
-            db.log_sync(conn, dtype, "error", notes=f"auth: {e}")
+            # Logged as auth_error, not error: doctor grades the two
+            # differently, and a dead token is the one that will not clear
+            # itself. Writing "error" here left doctor's auth branch dead, so a
+            # revoked token read as a warning and exited zero.
+            db.log_sync(conn, dtype, "auth_error", notes=str(e))
             results[dtype] = {"status": "auth_error", "message": str(e)}
         except api.FitbitAPIError as e:
             db.log_sync(conn, dtype, "error", notes=str(e))
