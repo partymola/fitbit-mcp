@@ -601,3 +601,147 @@ def test_warns_when_the_token_file_is_older_than_the_refresh_lifetime(setup_path
     findings = doctor.run_checks()
 
     assert any(f.name == "refresh token" and f.severity == doctor.WARN for f in findings)
+
+
+# os.access ignores permission bits under CAP_DAC_OVERRIDE.
+skip_as_root = pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses permission bits")
+
+
+def _findings_named(findings, name):
+    return [f for f in findings if f.name == name]
+
+
+def _seed_cache(db_path, when):
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = db.get_db(db_path)
+    conn.execute("INSERT OR REPLACE INTO activity (date, steps) VALUES (?, ?)", (when, 5000))
+    conn.commit()
+    conn.close()
+
+
+@skip_as_root
+def test_an_unreadable_database_is_not_called_corrupt(setup_paths):
+    """The corruption remedy is to delete the cache - never say it on a guess."""
+    _, db_path = setup_paths
+    _seed_cache(db_path, date.today().isoformat())
+    os.chmod(db_path, 0o000)
+    try:
+        findings = doctor.check_database()
+        detail = " ".join(f.detail for f in _findings_named(findings, "database"))
+        fixes = " ".join(f.fix or "" for f in _findings_named(findings, "database"))
+        assert any(f.severity == doctor.FAIL for f in _findings_named(findings, "database"))
+        assert "not readable" in detail
+        assert "delete" not in fixes.replace("do not delete", "")
+    finally:
+        os.chmod(db_path, 0o600)
+
+
+def test_a_database_that_will_not_open_is_not_called_corrupt(setup_paths, monkeypatch):
+    """A sync holding the write lock must not be reported as damage."""
+    _, db_path = setup_paths
+    _seed_cache(db_path, date.today().isoformat())
+
+    def refuse(path):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(doctor, "_open_db_readonly", refuse)
+    findings = doctor.check_database()
+    detail = " ".join(f.detail for f in _findings_named(findings, "database"))
+    fixes = " ".join(f.fix or "" for f in _findings_named(findings, "database"))
+    assert any(f.severity == doctor.FAIL for f in _findings_named(findings, "database"))
+    assert "not implicated" in detail
+    assert "delete" not in fixes and "backup" not in fixes
+
+
+@skip_as_root
+def test_a_read_only_database_directory_is_reported(setup_paths):
+    """SQLite writes its journal beside the database, so the directory counts."""
+    _, db_path = setup_paths
+    _seed_cache(db_path, date.today().isoformat())
+    os.chmod(db_path.parent, 0o500)
+    try:
+        findings = doctor.check_database()
+        assert any(f.severity == doctor.WARN for f in _findings_named(findings, "database"))
+        assert "sync will fail" in " ".join(f.detail for f in _findings_named(findings, "database"))
+    finally:
+        os.chmod(db_path.parent, 0o700)
+
+
+def test_a_fifo_at_the_database_path_does_not_hang(setup_paths):
+    _, db_path = setup_paths
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(db_path)
+    try:
+        findings = doctor.check_database()
+        assert any(f.severity == doctor.FAIL for f in _findings_named(findings, "database"))
+        assert "not a regular file" in " ".join(
+            f.detail for f in _findings_named(findings, "database")
+        )
+    finally:
+        db_path.unlink()
+
+
+def test_cache_age_is_measured_in_whole_days(setup_paths):
+    """Measuring from the current time makes staleness depend on the hour."""
+    _, db_path = setup_paths
+    _seed_cache(db_path, (date.today() - timedelta(days=3)).isoformat())
+    assert all(f.severity == doctor.OK for f in _findings_named(doctor.check_database(), "cache"))
+
+
+def test_a_cache_one_day_past_the_threshold_warns(setup_paths):
+    _, db_path = setup_paths
+    _seed_cache(db_path, (date.today() - timedelta(days=4)).isoformat())
+    assert any(f.severity == doctor.WARN for f in _findings_named(doctor.check_database(), "cache"))
+
+
+def test_a_malformed_cached_date_does_not_read_as_fresh(setup_paths):
+    """Dates are stored as the API returned them, and junk sorts high."""
+    _, db_path = setup_paths
+    _seed_cache(db_path, "not-a-date")
+    findings = _findings_named(doctor.check_database(), "cache")
+    assert any(f.severity == doctor.WARN for f in findings)
+    assert "not a calendar date" in " ".join(f.detail for f in findings)
+
+
+def test_an_offline_host_is_not_told_to_run_sync(setup_paths, monkeypatch):
+    """cli.py refuses `sync` offline, so advising it sends the user to exit 1."""
+    _, db_path = setup_paths
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", True)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db.get_db(db_path).close()
+
+    fixes = " ".join(f.fix or "" for f in doctor.check_database())
+    assert "fitbit-mcp sync" not in fixes
+    assert "cache-only" in fixes
+
+
+def test_a_live_host_is_still_told_to_run_sync(setup_paths):
+    _, db_path = setup_paths
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db.get_db(db_path).close()
+    assert "fitbit-mcp sync" in " ".join(f.fix or "" for f in doctor.check_database())
+
+
+def test_macos_is_not_reported_as_headless(setup_paths, monkeypatch):
+    """Neither display variable is set on macOS, yet the browser opens."""
+    monkeypatch.setattr(doctor.sys, "platform", "darwin")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert not _findings_named(doctor.check_auth_prerequisites(), "auth browser")
+
+
+def test_a_headless_linux_host_is_told_how_to_tunnel(setup_paths, monkeypatch):
+    monkeypatch.setattr(doctor.sys, "platform", "linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    findings = _findings_named(doctor.check_auth_prerequisites(), "auth browser")
+    assert findings and findings[0].severity == doctor.WARN
+    assert "ssh -L 8080:localhost:8080" in findings[0].fix
+
+
+def test_an_empty_path_variable_is_not_reported_as_the_default(setup_paths, monkeypatch):
+    """config.py reads the variable raw, so empty is still an override."""
+    monkeypatch.setenv("FITBIT_MCP_DB_PATH", "")
+    detail = _findings_named(doctor.check_environment(), "database path")[0].detail
+    assert "default" not in detail
+    assert "empty" in detail

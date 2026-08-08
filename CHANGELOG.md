@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-08
+
+### Fixed
+
+- `doctor` no longer reports a database it merely could not open as a corrupt one. A database locked by a sync running at that moment, left mid-recovery by one that crashed, or simply not readable by this user all took the corruption branch, whose remedy is to delete the cache and re-sync. Being unable to read a file says nothing about its contents, and a diagnostic should never advise destroying data on that basis. An unreadable file is now caught before the open, and a failure to open is reported separately from a file that is not a database.
+- The database writability check tested the file but not the directory it sits in. SQLite writes its rollback journal beside the database, so a writable file in a read-only directory failed every sync while `doctor` reported no problem - the exact state the finding describes.
+- Cache age is measured in whole days between dates rather than from the current time, so the same cache no longer reads stale late in the evening and fresh after midnight. A stored date that is not a calendar date now warns instead of reading as current; dates are kept as the API returned them, and a malformed one sorts above every real date.
+- An offline, cache-only host is no longer told to run `fitbit-mcp sync`, which the CLI refuses in that mode. It is pointed at the host that owns the database instead.
+- A path pointing at a named pipe made the command hang forever instead of reporting.
+- macOS and Windows are no longer reported as headless. Neither sets `DISPLAY` or `WAYLAND_DISPLAY`, and a browser opens there regardless, so every macOS user was told to authorise over an SSH tunnel.
+- An environment variable set to an empty value is described as such rather than as the default. It is still an override, and resolves relative to the working directory.
+
 ## [0.5.0] - 2026-08-08
 
 ### Added
@@ -105,7 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic rate-limit retry on 429 responses.
 - Pre-commit hook (`scripts/check-no-data.sh`) blocking commit of databases, tokens, and other secrets.
 
-[Unreleased]: https://github.com/partymola/fitbit-mcp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/partymola/fitbit-mcp/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/partymola/fitbit-mcp/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/partymola/fitbit-mcp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/partymola/fitbit-mcp/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/partymola/fitbit-mcp/compare/v0.3.0...v0.3.1

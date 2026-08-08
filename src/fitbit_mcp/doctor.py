@@ -20,10 +20,11 @@ import json
 import os
 import socket
 import sqlite3
+import sys
 import time
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -102,7 +103,18 @@ def _reference_schema() -> dict[str, set[str]]:
 
 
 def _describe_path_source(env_var: str) -> str:
-    return f"from ${env_var}" if os.environ.get(env_var) else "default"
+    """Say where a path came from, matching how config.py actually resolves it.
+
+    config.py reads the variable with a plain `os.environ.get`, so an empty
+    value is still an override - it resolves to a path relative to the working
+    directory. Testing truthiness here would report that as the default and
+    send the reader looking for the wrong fault.
+    """
+    if env_var not in os.environ:
+        return "default"
+    if not os.environ[env_var]:
+        return f"${env_var} is set but empty, so the path resolves under the working directory"
+    return f"from ${env_var}"
 
 
 def _timestamp_or_none(value) -> datetime | None:
@@ -360,21 +372,46 @@ def check_database() -> list[Finding]:
             )
         ]
 
-    if path.is_dir():
-        return [Finding("database", FAIL, f"{path} is a directory, not a database file.")]
+    # is_file() rather than not is_dir(): a FIFO passes the directory test and
+    # then blocks the open forever, and a diagnostic that hangs is worse than
+    # one that reports.
+    if not path.is_file():
+        return [
+            Finding("database", FAIL, f"{path} is not a regular file, so it cannot be a database.")
+        ]
 
     findings = []
+    if not os.access(path, os.R_OK):
+        # Reported before opening, because the open fails with the same error
+        # SQLite raises for a corrupt file - and that path recommends deleting
+        # the database, which would be catastrophic advice here.
+        return [
+            Finding(
+                "database",
+                FAIL,
+                "Database exists but is not readable by this user. Nothing can be "
+                "queried, and this says nothing about whether its contents are sound.",
+                "Fix ownership/permissions - do not delete it.",
+            )
+        ]
+
     # A read-only cache is the documented multi-host arrangement, not a fault:
     # one host syncs and the rest read. Only worth reporting where this host is
-    # expected to write.
-    if not config.OFFLINE_MODE and not os.access(path, os.W_OK):
+    # expected to write. SQLite writes its rollback journal beside the database,
+    # so a writable file in a read-only directory still fails every sync -
+    # checking only the file would miss the case this finding describes.
+    if not config.OFFLINE_MODE and (
+        not os.access(path, os.W_OK) or not os.access(path.parent, os.W_OK)
+    ):
         findings.append(
             Finding(
                 "database",
                 WARN,
-                "Database is not writable by this user; queries will work but "
-                "every sync will fail.",
-                "Fix ownership/permissions, or run syncs as the owning user.",
+                "Database cannot be written by this user; queries will work but "
+                "every sync will fail. SQLite needs to write both the database file "
+                "and a journal in its directory.",
+                "Fix ownership/permissions on the file and its directory, or run syncs "
+                "as the owning user.",
             )
         )
 
@@ -392,6 +429,22 @@ def check_database() -> list[Finding]:
                 ]
             findings.extend(_check_schema(conn))
             findings.extend(_check_freshness(conn))
+    except sqlite3.OperationalError:
+        # Split from DatabaseError below on purpose. SQLite raises this when it
+        # cannot open or read the file - locked by a sync running now, or a hot
+        # journal from one that crashed - which says nothing about the contents.
+        # Sharing the corruption branch would tell a user with a healthy
+        # database to delete it.
+        return findings + [
+            Finding(
+                "database",
+                FAIL,
+                f"{path} could not be opened. It may be locked by a sync running now, "
+                "or left mid-recovery by one that crashed. Its contents are not "
+                "implicated.",
+                "Retry once any sync has finished, and check ownership/permissions.",
+            )
+        ]
     except sqlite3.DatabaseError:
         return findings + [
             Finding(
@@ -403,6 +456,20 @@ def check_database() -> list[Finding]:
         ]
 
     return findings
+
+
+def _resync_advice(action: str) -> str:
+    """Remediation for a cache problem, correct for this host's mode.
+
+    cli.py refuses `sync` in offline mode, so advising it there sends the user
+    to a command that exits 1. The fault belongs to whichever host does sync.
+    """
+    if config.OFFLINE_MODE:
+        return (
+            "This host is cache-only, so run the sync on the host that owns the "
+            "database; nothing here will change it."
+        )
+    return action
 
 
 def _check_schema(conn: sqlite3.Connection) -> list[Finding]:
@@ -448,7 +515,7 @@ def _check_schema(conn: sqlite3.Connection) -> list[Finding]:
                 WARN,
                 f"{len(absent)} table(s) absent: {', '.join(absent)}. They are "
                 "recreated empty on the next open, so any history in them is lost.",
-                "Re-sync to refill them.",
+                _resync_advice("Re-sync to refill them."),
             )
         )
     if not findings:
@@ -472,7 +539,7 @@ def _check_freshness(conn: sqlite3.Connection) -> list[Finding]:
                 "cache",
                 WARN,
                 "Database has no data in any table.",
-                "Run `fitbit-mcp sync --days 30`.",
+                _resync_advice("Run `fitbit-mcp sync --days 30`."),
             )
         ]
 
@@ -482,10 +549,22 @@ def _check_freshness(conn: sqlite3.Connection) -> list[Finding]:
     # Staleness is judged on the newest row across all types, not per type.
     # Types only written when the user logs something - weight, food - lag by
     # design, and flagging those individually would cry wolf on a healthy cache.
+    # Whole days between two dates. Measuring from `datetime.now()` instead
+    # would fold in the time of day, so the same cache read stale at 23:00 and
+    # fresh at 01:00.
     try:
-        age = datetime.now() - datetime.strptime(latest, "%Y-%m-%d")
+        age = date.today() - datetime.strptime(latest, "%Y-%m-%d").date()
     except ValueError:
-        return [Finding("cache", OK, summary)]
+        # Dates are stored as the API returned them, so a malformed one sorts
+        # high and would otherwise mark any cache current, however old.
+        return [
+            Finding(
+                "cache",
+                WARN,
+                f"{summary} - that date is not a calendar date, so freshness cannot be judged.",
+                _resync_advice("Re-sync to overwrite it."),
+            )
+        ]
 
     if age <= _CACHE_STALE_AFTER:
         return [Finding("cache", OK, summary)]
@@ -549,8 +628,8 @@ def check_sync_health() -> list[Finding]:
     )
 
     if config.OFFLINE_MODE:
-        # This host does not sync; the log belongs to whichever host does, and
-        # both remedies below are refused here (cli.py exits on `sync` offline).
+        # This host does not sync; the log belongs to whichever host does. Only
+        # `sync` is refused offline - `auth` runs - but neither helps from here.
         return [
             Finding(
                 "sync log",
@@ -593,7 +672,12 @@ def check_auth_prerequisites() -> list[Finding]:
                 )
             )
 
-    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+    # DISPLAY/WAYLAND_DISPLAY are X11/Wayland only; macOS and Windows open a
+    # browser without either, so testing them alone flags every mac as headless.
+    headless = sys.platform not in ("darwin", "win32") and not (
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+    )
+    if headless:
         findings.append(
             Finding(
                 "auth browser",
