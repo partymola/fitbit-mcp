@@ -182,7 +182,14 @@ def test_a_chmod_failure_does_not_destroy_the_token(tmp_path, monkeypatch):
 
 
 class TestTheCallbackPage:
-    """The callback reflects a query-string parameter back to the browser."""
+    """What the browser authorisation flow shows the user.
+
+    The callback reflects a query-string parameter back to the browser, so
+    the page escapes what it displays. The two assertions below that go
+    wider - reading setup_auth's source rather than calling it - keep the
+    exception itself out of that page and out of stderr, by the two routes
+    it can travel: bound to a name, and reached without one.
+    """
 
     def test_a_script_tag_is_escaped(self):
         from fitbit_mcp.auth import _callback_page
@@ -266,3 +273,43 @@ class TestTheCallbackPage:
                 and id(node) not in allowed
             ]
         assert not offenders, f"exception used outside type(e).__name__: {offenders}"
+
+    def test_the_live_exception_is_not_reached_without_binding_it(self):
+        """The rule above keys on the bound name, so these bypass it entirely.
+
+        `traceback.format_exc()` is the realistic one - it is what gets added
+        while debugging a failing authorisation, and it prints source lines
+        and absolute paths. Unlike the ways of stringifying an object, the
+        ways of reaching the live exception without naming it are a closed
+        set, so naming them is not the trap the blocklist was.
+        """
+        import ast
+        import inspect
+
+        from fitbit_mcp import auth
+
+        tree = ast.parse(inspect.getsource(auth.setup_auth))
+
+        unbound = [
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ExceptHandler) and not node.name
+        ]
+        assert not unbound, (
+            f"except clause binds no name, so the rule above is blind to it: {unbound}"
+        )
+
+        # Exact callables for sys, whose exit() this function uses legitimately;
+        # whole modules for traceback and inspect, which it has no other use for.
+        banned_calls = {"sys.exc_info", "sys.exception", "exc_info", "locals", "vars"}
+        banned_modules = {"traceback", "inspect"}
+        reached = sorted(
+            {
+                name
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                for name in [ast.unparse(node.func)]
+                if name in banned_calls or name.split(".")[0] in banned_modules
+            }
+        )
+        assert not reached, f"reaches the live exception without binding it: {reached}"
