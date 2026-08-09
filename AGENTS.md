@@ -53,7 +53,7 @@ A claim sits at a seam when **no input to the program can make its test fail**. 
 
 Crossed, and by what:
 
-- **Closures that cannot be imported.** `CallbackHandler` lives inside `setup_auth`, so the only way to check it is to read the source. `TestTheCallbackPage` does, three ways: the page escapes what it shows, every `wfile` write goes through `_callback_page`, and the exception reaches the user only as `type(e).__name__` and is never reached unbound.
+- **Closures that cannot be imported.** `CallbackHandler` lives inside `setup_auth`, so the only way to check it is to read the source. `TestTheCallbackPage` does, pinning three properties across its five tests: the page escapes what it shows, every `wfile` write goes through `_callback_page`, and the exception reaches the user only as `type(e).__name__` and is never reached unbound.
 - **The module import graph.** No behavioural test can see an unused import, and `doctor` importing `auth` or `api` would let a diagnostic rotate a token another host owns. `TestDoctorStaysOffline`.
 - **Which code may print a path.** `test_no_logger_call_in_shared_code_carries_a_path` in `tests/test_seams.py`. Key on the logging *method*, not on the receiver's name - `logging.getLogger(__name__).info` is the same call as `logger.info` and a name match misses it.
 - **Packaging consistency.** `test_the_declared_version_and_the_lockfile_agree`, same file.
@@ -61,7 +61,7 @@ Crossed, and by what:
 Crossed only from outside this repo, which an outside contributor will not have:
 
 - **The mock boundary.** Tool tests patch `api.get`, so the mock sits above the real client and a change to what it accepts or returns is invisible to most of the suite. Partially crossed by the two tests that drive `devices` and `spo2` through the real client - the pattern to copy when a change touches that layer.
-- **The wire contract.** The suite calls tool functions directly and never the server, so tool names, descriptions and schemas are untested. Dump the tool list and schemas from a real server and diff them across the change.
+- **The wire contract.** The suite calls tool functions directly and never the server, so a tool's description and its input schema are untested: replacing a docstring with nonsense, or changing a parameter's type annotation, passes the whole suite. A rename is caught, but only incidentally - `tests/test_tools.py` imports the functions by name - so do not read that as contract coverage. Dump the tool list and schemas from a real server and diff them across the change.
 - **The pre-commit guard.** `scripts/check-no-data.sh` is not exercised by pytest at all. Stage a probe file per class and check reject against expectation.
 
 ## Database schema
