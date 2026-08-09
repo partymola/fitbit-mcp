@@ -237,12 +237,20 @@ class TestTheCallbackPage:
         from fitbit_mcp import auth
 
         tree = ast.parse(inspect.getsource(auth.setup_auth))
-        # node.value, not the FormattedValue: unparsing the latter yields
-        # "{e}" with the braces, which never equals the name being looked for.
-        interpolated = {
-            ast.unparse(node.value)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.FormattedValue)
-        }
-        assert "e" not in interpolated, f"exception interpolated whole: {sorted(interpolated)}"
-        assert "str(e)" not in interpolated
+        # Every expression the exception could travel through, not only
+        # f-strings: it reaches the user by two routes, and the assignment to
+        # auth_result["error"] is printed to stderr later. An earlier version
+        # walked FormattedValue alone and could not see that half. It also
+        # unparsed the FormattedValue rather than its .value, which yields
+        # "{e}" with the braces and matches nothing.
+        carriers = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FormattedValue):
+                carriers.add(ast.unparse(node.value))
+            elif isinstance(node, ast.Assign):
+                carriers.add(ast.unparse(node.value))
+
+        for banned in ("e", "str(e)", "repr(e)"):
+            assert banned not in carriers, (
+                f"exception carried whole via {banned!r}: {sorted(carriers)}"
+            )

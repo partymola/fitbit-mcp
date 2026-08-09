@@ -247,13 +247,27 @@ class TestTheImportRecordCarriesNoPath:
     """
 
     def test_the_note_names_the_file_not_its_path(self, tmp_path):
+        """Every file the importer reads, not just the first.
+
+        Each is a separate log_sync call, so pinning one leaves the other six
+        free to write a full path.
+        """
         import sqlite3
 
         data_dir = tmp_path / "MrPrivateName" / "export"
         data_dir.mkdir(parents=True)
-        (data_dir / "heart_rate.json").write_text(
-            json.dumps({"2026-03-10": {"resting_hr": 62, "heart_rate_zones": []}})
-        )
+        # One row each, so every branch of run_import writes its sync_log row.
+        payloads = {
+            "heart_rate.json": {"2026-03-10": {"resting_hr": 62, "heart_rate_zones": []}},
+            "activity.json": {"2026-03-10": {"steps": 9000}},
+            "exercises.json": {"log_1": {"date": "2026-03-10", "name": "Walk"}},
+            "sleep.json": {"2026-03-10": {"total_minutes": 420}},
+            "weight.json": {"2026-03-10": {"weight_kg": 70.0}},
+            "spo2.json": {"2026-03-10": {"avg": 96.0}},
+            "hrv.json": {"2026-03-10": {"daily_rmssd": 38.0}},
+        }
+        for name, payload in payloads.items():
+            (data_dir / name).write_text(json.dumps(payload))
 
         db_path = tmp_path / "test.db"
         with patch("fitbit_mcp.db.DB_PATH", db_path):
@@ -265,8 +279,7 @@ class TestTheImportRecordCarriesNoPath:
         notes = [r[0] for r in conn.execute("SELECT notes FROM sync_log").fetchall()]
         conn.close()
 
-        assert notes
-        assert any("heart_rate.json" in n for n in notes)
+        assert len(notes) == len(payloads), f"not every branch logged: {notes}"
         for note in notes:
             assert "MrPrivateName" not in note
             assert "/" not in note

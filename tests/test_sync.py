@@ -4,6 +4,8 @@ import sqlite3
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from fitbit_mcp import db
 from fitbit_mcp.tools.sync_tools import (
     _chunk_date_ranges,
@@ -1014,8 +1016,13 @@ def test_auto_sync_logs_a_type_rather_than_a_traceback(tmp_path, monkeypatch, ca
     assert any("FileNotFoundError" in r.getMessage() for r in caplog.records)
 
 
-def test_the_rate_limit_wait_is_capped(tmp_path, monkeypatch):
-    """The sleep runs on the thread serving an MCP tool call."""
+@pytest.mark.parametrize("loop", ["_sync_activity", "_sync_food_log"])
+def test_the_rate_limit_wait_is_capped(loop, tmp_path, monkeypatch):
+    """The sleep runs on the thread serving an MCP tool call.
+
+    Both per-day loops sleep, and pinning one left the other free to add
+    five seconds to an already-capped value unnoticed.
+    """
     from fitbit_mcp import api as api_module
     from fitbit_mcp import db as db_module
     from fitbit_mcp.tools import sync_tools
@@ -1029,7 +1036,7 @@ def test_the_rate_limit_wait_is_capped(tmp_path, monkeypatch):
         MagicMock(side_effect=[api_module.FitbitRateLimitError(86400), {"summary": {}}]),
     )
 
-    sync_tools._sync_activity(conn, date(2026, 3, 10), date(2026, 3, 10))
+    getattr(sync_tools, loop)(conn, date(2026, 3, 10), date(2026, 3, 10))
 
     assert slept
     assert max(slept) <= api_module.MAX_RATE_LIMIT_WAIT
