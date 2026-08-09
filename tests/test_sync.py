@@ -984,6 +984,57 @@ def test_a_database_that_cannot_record_the_failure_does_not_escape(tmp_path, mon
     assert closed == [True]
 
 
+def test_auto_sync_logs_a_type_rather_than_a_traceback(tmp_path, monkeypatch, caplog):
+    """A traceback carries the database path, and this line is on by request.
+
+    The Data Safety Rules have no debug carve-out, so exc_info is not an
+    option here.
+    """
+    import logging
+
+    from fitbit_mcp import db as db_module
+    from fitbit_mcp.tools import sync_tools
+
+    conn = db_module.get_db(tmp_path / "fitbit.db")
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+    monkeypatch.setattr(sync_tools.db, "get_db", lambda *a, **k: conn)
+    monkeypatch.setattr(
+        sync_tools.db,
+        "get_last_sync_time",
+        MagicMock(side_effect=FileNotFoundError(2, "No such file", "/home/private/cache.db")),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="fitbit_mcp.tools.sync_tools"):
+        sync_tools.auto_sync_if_stale("sleep")
+
+    assert caplog.records
+    for record in caplog.records:
+        assert record.exc_info is None
+        assert "/home/private" not in record.getMessage()
+    assert any("FileNotFoundError" in r.getMessage() for r in caplog.records)
+
+
+def test_the_rate_limit_wait_is_capped(tmp_path, monkeypatch):
+    """The sleep runs on the thread serving an MCP tool call."""
+    from fitbit_mcp import api as api_module
+    from fitbit_mcp import db as db_module
+    from fitbit_mcp.tools import sync_tools
+
+    conn = db_module.get_db(tmp_path / "fitbit.db")
+    slept = []
+    monkeypatch.setattr(sync_tools.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(
+        sync_tools.api,
+        "get",
+        MagicMock(side_effect=[api_module.FitbitRateLimitError(86400), {"summary": {}}]),
+    )
+
+    sync_tools._sync_activity(conn, date(2026, 3, 10), date(2026, 3, 10))
+
+    assert slept
+    assert max(slept) <= api_module.MAX_RATE_LIMIT_WAIT
+
+
 def test_auto_sync_closes_its_connection_even_when_the_lookup_fails(tmp_path, monkeypatch):
     """Its own read is outside run_sync, so nothing else closes for it."""
     from fitbit_mcp import db as db_module

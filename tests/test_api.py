@@ -24,8 +24,11 @@ class TestAPIExceptions:
         assert str(e) == "test"
 
     def test_rate_limit_error_default(self):
+        """The default is the cap, not a value the cap would reject."""
+        from fitbit_mcp.api import MAX_RATE_LIMIT_WAIT
+
         e = FitbitRateLimitError()
-        assert e.reset_seconds == 3600
+        assert e.reset_seconds == MAX_RATE_LIMIT_WAIT
 
     def test_rate_limit_error_custom(self):
         e = FitbitRateLimitError(120)
@@ -226,6 +229,17 @@ class TestTheRateLimitWait:
         from fitbit_mcp.api import MAX_RATE_LIMIT_WAIT
 
         assert self._reset_for("soon") == MAX_RATE_LIMIT_WAIT
+
+    @pytest.mark.parametrize("header", ["inf", "Infinity", "-inf", "1e400", "nan"])
+    def test_a_non_finite_header_falls_back_rather_than_raising(self, header):
+        """int(float("inf")) raises OverflowError, where int("inf") raised ValueError.
+
+        Accepting floats to keep a fractional header widened the input past
+        what the handler caught.
+        """
+        from fitbit_mcp.api import MAX_RATE_LIMIT_WAIT
+
+        assert self._reset_for(header) == MAX_RATE_LIMIT_WAIT
 
     def test_a_negative_header_does_not_become_a_negative_sleep(self):
         assert self._reset_for("-5") == 0

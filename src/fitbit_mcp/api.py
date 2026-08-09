@@ -37,18 +37,18 @@ class FitbitOfflineError(Exception):
     """
 
 
-class FitbitRateLimitError(Exception):
-    """Rate limited (429). Retry after reset seconds."""
-
-    def __init__(self, reset_seconds: int = 3600):
-        self.reset_seconds = reset_seconds
-        super().__init__(f"Rate limited. Retry in {reset_seconds}s.")
-
-
 #: Longest we will wait on a rate limit before giving up and recording it. A
 #: header asking for more is honoured up to this and no further: sleeping is
 #: done on the thread serving an MCP tool call, so an unbounded value hangs it.
 MAX_RATE_LIMIT_WAIT = 900
+
+
+class FitbitRateLimitError(Exception):
+    """Rate limited (429). Retry after reset seconds."""
+
+    def __init__(self, reset_seconds: int = MAX_RATE_LIMIT_WAIT):
+        self.reset_seconds = reset_seconds
+        super().__init__(f"Rate limited. Retry in {reset_seconds}s.")
 
 
 def _reset_seconds(error) -> int:
@@ -58,10 +58,11 @@ def _reset_seconds(error) -> int:
     except AttributeError:
         return MAX_RATE_LIMIT_WAIT
     try:
-        # float first: a fractional value is a number of seconds, not a
-        # malformed header, and int() alone would discard it for the fallback.
+        # float first, so a fractional header keeps its value. OverflowError
+        # is not a ValueError: int(float("inf")) raises it, where int("inf")
+        # did not.
         seconds = int(float(raw))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return MAX_RATE_LIMIT_WAIT
     if seconds < 0:
         return 0

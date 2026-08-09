@@ -237,3 +237,36 @@ class TestImporter:
             from fitbit_mcp.importer import run_import
 
             run_import(tmp_path / "nonexistent")
+
+
+class TestTheImportRecordCarriesNoPath:
+    """sync_log is kept, and doctor and the tools read it back.
+
+    The directory being imported from is the user's own and is printed to
+    their terminal; storing its absolute path is a different matter.
+    """
+
+    def test_the_note_names_the_file_not_its_path(self, tmp_path):
+        import sqlite3
+
+        data_dir = tmp_path / "MrPrivateName" / "export"
+        data_dir.mkdir(parents=True)
+        (data_dir / "heart_rate.json").write_text(
+            json.dumps({"2026-03-10": {"resting_hr": 62, "heart_rate_zones": []}})
+        )
+
+        db_path = tmp_path / "test.db"
+        with patch("fitbit_mcp.db.DB_PATH", db_path):
+            from fitbit_mcp.importer import run_import
+
+            run_import(data_dir)
+
+        conn = sqlite3.connect(db_path)
+        notes = [r[0] for r in conn.execute("SELECT notes FROM sync_log").fetchall()]
+        conn.close()
+
+        assert notes
+        assert any("heart_rate.json" in n for n in notes)
+        for note in notes:
+            assert "MrPrivateName" not in note
+            assert "/" not in note

@@ -831,3 +831,47 @@ def test_a_dead_token_recorded_before_the_upgrade_still_fails(setup_paths):
     conn.close()
 
     assert any(f.severity == doctor.FAIL for f in doctor.check_sync_health())
+
+
+class TestDoctorStaysOffline:
+    """doctor must not be able to touch the credentials at all.
+
+    It runs on hosts that do not own the token file. An import of auth or
+    api is enough: a refresh triggered from a diagnostic rotates a token
+    another host is using, and no test watching a healthy setup would see it.
+    """
+
+    def _imported_names(self):
+        """Every module name doctor.py imports, dotted forms included."""
+        import ast
+        from pathlib import Path
+
+        tree = ast.parse(Path(doctor.__file__).read_text())
+        names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    names.add(f"{node.module}.{alias.name}" if node.module else alias.name)
+                if node.module:
+                    names.add(node.module)
+            elif isinstance(node, ast.Import):
+                names.update(a.name for a in node.names)
+        return names
+
+    def test_doctor_imports_neither_auth_nor_api(self):
+        # Match the last dotted segment so `import fitbit_mcp.auth` is caught
+        # as well as `from . import auth`.
+        segments = {seg for name in self._imported_names() for seg in name.split(".")}
+        assert "auth" not in segments
+        assert "api" not in segments
+
+    def test_doctor_imports_nothing_else_from_the_package(self):
+        """A subset assertion would pass for any new sibling import."""
+        siblings = {
+            seg
+            for name in self._imported_names()
+            for seg in name.split(".")
+            if seg
+            in {"api", "auth", "config", "db", "helpers", "importer", "mcp_instance", "tools"}
+        }
+        assert siblings == {"config", "db"}

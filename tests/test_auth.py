@@ -224,3 +224,25 @@ class TestTheCallbackPage:
         assert "Authorised! You can close this tab." in _callback_page(
             "Authorised! You can close this tab."
         )
+
+    def test_no_exception_is_interpolated_whole_into_the_flow(self):
+        """The page and stderr both carry what setup_auth formats.
+
+        A TLS failure's own text is a filesystem path and a decode failure's
+        is response bytes, so only the type name may be interpolated.
+        """
+        import ast
+        import inspect
+
+        from fitbit_mcp import auth
+
+        tree = ast.parse(inspect.getsource(auth.setup_auth))
+        # node.value, not the FormattedValue: unparsing the latter yields
+        # "{e}" with the braces, which never equals the name being looked for.
+        interpolated = {
+            ast.unparse(node.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FormattedValue)
+        }
+        assert "e" not in interpolated, f"exception interpolated whole: {sorted(interpolated)}"
+        assert "str(e)" not in interpolated

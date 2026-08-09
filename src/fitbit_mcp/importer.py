@@ -1,7 +1,7 @@
 """One-time import of existing Fitbit JSON data files into the SQLite cache.
 
 Usage:
-    fitbit-mcp import --data-dir ~/claude/personal/fitbit/data/
+    fitbit-mcp import --data-dir /path/to/exported/json/
 """
 
 import json
@@ -39,7 +39,7 @@ def run_import(data_dir: Path):
             )
             count += 1
         conn.commit()
-        db.log_sync(conn, "heart_rate", "import", count, f"imported from {hr_file}")
+        db.log_sync(conn, "heart_rate", "import", count, f"imported from {hr_file.name}")
         print(f"  heart_rate: {count} days")
         total_imported += count
     else:
@@ -70,7 +70,7 @@ def run_import(data_dir: Path):
             )
             count += 1
         conn.commit()
-        db.log_sync(conn, "activity", "import", count, f"imported from {act_file}")
+        db.log_sync(conn, "activity", "import", count, f"imported from {act_file.name}")
         print(f"  activity: {count} days")
         total_imported += count
     else:
@@ -103,7 +103,7 @@ def run_import(data_dir: Path):
             )
             count += 1
         conn.commit()
-        db.log_sync(conn, "exercises", "import", count, f"imported from {ex_file}")
+        db.log_sync(conn, "exercises", "import", count, f"imported from {ex_file.name}")
         print(f"  exercises: {count} entries")
         total_imported += count
     else:
@@ -133,7 +133,7 @@ def run_import(data_dir: Path):
             )
             count += 1
         conn.commit()
-        db.log_sync(conn, "sleep", "import", count, f"imported from {sleep_file}")
+        db.log_sync(conn, "sleep", "import", count, f"imported from {sleep_file.name}")
         print(f"  sleep: {count} nights")
         total_imported += count
     else:
@@ -158,7 +158,7 @@ def run_import(data_dir: Path):
             )
             count += 1
         conn.commit()
-        db.log_sync(conn, "weight", "import", count, f"imported from {weight_file}")
+        db.log_sync(conn, "weight", "import", count, f"imported from {weight_file.name}")
         print(f"  weight: {count} entries")
         total_imported += count
     else:
@@ -183,7 +183,7 @@ def run_import(data_dir: Path):
             )
             count += 1
         conn.commit()
-        db.log_sync(conn, "spo2", "import", count, f"imported from {spo2_file}")
+        db.log_sync(conn, "spo2", "import", count, f"imported from {spo2_file.name}")
         print(f"  spo2: {count} nights")
         total_imported += count
     else:
@@ -207,7 +207,7 @@ def run_import(data_dir: Path):
             )
             count += 1
         conn.commit()
-        db.log_sync(conn, "hrv", "import", count, f"imported from {hrv_file}")
+        db.log_sync(conn, "hrv", "import", count, f"imported from {hrv_file.name}")
         print(f"  hrv: {count} nights")
         total_imported += count
     else:

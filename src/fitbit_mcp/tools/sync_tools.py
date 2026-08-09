@@ -69,8 +69,9 @@ def _sync_activity(conn, start_date: date, end_date: date) -> int:
         try:
             data = api.get(path)
         except api.FitbitRateLimitError as e:
-            logger.warning("Rate limited during activity sync, sleeping %ds", e.reset_seconds)
-            time.sleep(e.reset_seconds + 5)
+            wait = min(e.reset_seconds + 5, api.MAX_RATE_LIMIT_WAIT)
+            logger.warning("Rate limited during activity sync, sleeping %ds", wait)
+            time.sleep(wait)
             data = api.get(path)
         summary = data.get("summary", {})
         distances = summary.get("distances", [{}])
@@ -500,8 +501,9 @@ def _sync_food_log(conn, start_date: date, end_date: date) -> int:
         try:
             data = api.get(path)
         except api.FitbitRateLimitError as e:
-            logger.warning("Rate limited during food sync, sleeping %ds", e.reset_seconds)
-            time.sleep(e.reset_seconds + 5)
+            wait = min(e.reset_seconds + 5, api.MAX_RATE_LIMIT_WAIT)
+            logger.warning("Rate limited during food sync, sleeping %ds", wait)
+            time.sleep(wait)
             data = api.get(path)
         if not _has_food_log(data):
             d += timedelta(days=1)
@@ -680,8 +682,8 @@ def auto_sync_if_stale(data_type: str) -> None:
             return
 
         run_sync([data_type])
-    except Exception:
-        logger.debug("Auto-sync failed for %s", data_type, exc_info=True)
+    except Exception as e:
+        logger.debug("Auto-sync failed for %s: %s", data_type, type(e).__name__)
 
 
 @mcp.tool()

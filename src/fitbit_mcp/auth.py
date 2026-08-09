@@ -286,8 +286,12 @@ def setup_auth():
                 self._respond(200, "Authorised! You can close this tab.")
                 auth_result["tokens"] = tokens
             except Exception as e:
-                self._respond(500, f"Token exchange failed: {e}")
-                auth_result["error"] = str(e)
+                # Type only: this reaches a browser page and stderr, and the
+                # exception's own text for a TLS or decode failure is a
+                # filesystem path or response bytes.
+                logger.error("Token exchange failed: %s", type(e).__name__)
+                self._respond(500, f"Token exchange failed ({type(e).__name__}).")
+                auth_result["error"] = type(e).__name__
 
         def _respond(self, status_code, message):
             self.send_response(status_code)
