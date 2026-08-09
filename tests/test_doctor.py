@@ -9,6 +9,7 @@ setup it exists to describe.
 import json
 import os
 import sqlite3
+import sys
 import time
 from contextlib import contextmanager
 from datetime import date, timedelta
@@ -501,7 +502,10 @@ def test_a_current_cache_is_not_called_stale(setup_paths):
     assert any(f.name == "cache" and f.severity == doctor.OK for f in findings)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permission bits")
+@pytest.mark.skipif(
+    sys.platform != "win32" and os.geteuid() == 0,
+    reason="root bypasses file permission bits",
+)
 def test_reports_an_unwritable_token_file(setup_paths):
     """The refresh rotates server-side before the save, so a failed write
     leaves no usable token anywhere - worth catching before it happens."""
@@ -514,7 +518,10 @@ def test_reports_an_unwritable_token_file(setup_paths):
     assert any(f.name == "credentials" and f.severity == doctor.FAIL for f in findings)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permission bits")
+@pytest.mark.skipif(
+    sys.platform != "win32" and os.geteuid() == 0,
+    reason="root bypasses file permission bits",
+)
 def test_a_read_only_config_directory_is_not_a_problem(setup_paths):
     """auth.py rewrites the token file in place, so only the file must be writable."""
     config_dir, _db_path = setup_paths
@@ -605,7 +612,14 @@ def test_warns_when_the_token_file_is_older_than_the_refresh_lifetime(setup_path
 
 
 # os.access ignores permission bits under CAP_DAC_OVERRIDE.
-skip_as_root = pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses permission bits")
+# os.geteuid and os.mkfifo are POSIX-only, and the marker below is evaluated at
+# import: on Windows an attribute error here would take the whole module out
+# rather than skipping a test.
+_POSIX = sys.platform != "win32"
+skip_non_posix = pytest.mark.skipif(not _POSIX, reason="POSIX-only file semantics")
+skip_as_root = pytest.mark.skipif(
+    _POSIX and os.geteuid() == 0, reason="root bypasses permission bits"
+)
 
 
 def _findings_named(findings, name):
@@ -621,6 +635,7 @@ def _seed_cache(db_path, when):
 
 
 @skip_as_root
+@skip_non_posix
 def test_an_unreadable_database_is_not_called_corrupt(setup_paths):
     """The corruption remedy is to delete the cache - never say it on a guess."""
     _, db_path = setup_paths
@@ -655,6 +670,7 @@ def test_a_database_that_will_not_open_is_not_called_corrupt(setup_paths, monkey
 
 
 @skip_as_root
+@skip_non_posix
 def test_a_read_only_database_directory_is_reported(setup_paths):
     """SQLite writes its journal beside the database, so the directory counts."""
     _, db_path = setup_paths
@@ -668,6 +684,7 @@ def test_a_read_only_database_directory_is_reported(setup_paths):
         os.chmod(db_path.parent, 0o700)
 
 
+@skip_non_posix
 def test_a_fifo_at_the_database_path_does_not_hang(setup_paths):
     _, db_path = setup_paths
     db_path.parent.mkdir(parents=True, exist_ok=True)

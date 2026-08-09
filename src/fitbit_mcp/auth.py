@@ -68,6 +68,17 @@ def _save_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
+        # Best-effort tightening, inside the try and never fatal. The mode on
+        # os.open applies only when the file is created, so a file from an
+        # install that predates it keeps its old mode; but O_TRUNC has already
+        # emptied the file by this point, so letting a chmod failure abort the
+        # write would destroy a working token to fix its permissions. Needs
+        # ownership, which the writer does not always have.
+        if hasattr(os, "fchmod"):
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError:
+                logger.warning("Could not tighten permissions on the token file")
         os.write(fd, json.dumps(data, indent=2).encode())
     finally:
         os.close(fd)

@@ -1,11 +1,12 @@
 """Tests for the Fitbit API client."""
 
 import json
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fitbit_mcp import api, auth, config
+from fitbit_mcp import api, auth, config, db
 from fitbit_mcp.api import (
     FitbitAPIError,
     FitbitAuthError,
@@ -493,3 +494,118 @@ class TestAgainstRealTransportFailures:
         with pytest.raises(FitbitAPIError) as caught:
             api.get("/1/user/-/profile.json")
         assert not isinstance(caught.value, FitbitAuthError)
+
+
+class TestTheDataRequestParses:
+    """The data request reads and parses, each with its own failures.
+
+    A proxy answering an API call with HTML raises ValueError, which the
+    transport handlers do not catch, so it escaped run_sync and left no
+    sync_log row while doctor reported a clean log.
+    """
+
+    def _get_returning(self, payload, monkeypatch):
+        monkeypatch.setattr(config, "OFFLINE_MODE", False)
+        response = MagicMock()
+        response.read.return_value = payload
+        response.__enter__ = lambda s: s
+        response.__exit__ = lambda *a: None
+        monkeypatch.setattr(api, "refresh_token", MagicMock(return_value="token"))
+        monkeypatch.setattr(api.urllib.request, "urlopen", MagicMock(return_value=response))
+        return api.get("/1/user/-/profile.json")
+
+    def test_a_body_that_is_not_json_is_reported(self, monkeypatch):
+        with pytest.raises(FitbitAPIError):
+            self._get_returning(b"<html>captive portal</html>", monkeypatch)
+
+    def test_an_undecodable_body_is_reported(self, monkeypatch):
+        """UnicodeDecodeError is a ValueError, and the transport handlers miss it."""
+        with pytest.raises(FitbitAPIError):
+            self._get_returning(b"\xff\xfe\x00 not utf-8", monkeypatch)
+
+    def test_neither_is_reported_as_an_auth_failure(self, monkeypatch):
+        for payload in (b"<html>x</html>", b"\xff\xfe"):
+            with pytest.raises(FitbitAPIError) as caught:
+                self._get_returning(payload, monkeypatch)
+            assert not isinstance(caught.value, FitbitAuthError)
+
+    def test_a_valid_body_still_parses(self, monkeypatch):
+        assert self._get_returning(b'{"ok": 1}', monkeypatch) == {"ok": 1}
+
+
+class TestTheParsedBodyMustBeUsable:
+    """A list is a legitimate response; a scalar is not.
+
+    /devices.json returns a bare array and the spo2 range endpoint returns
+    either an array or an object, so a dict-only guard rejects valid data. A
+    scalar is the only shape no caller can use.
+    """
+
+    def _get_returning(self, payload, monkeypatch):
+        monkeypatch.setattr(config, "OFFLINE_MODE", False)
+        response = MagicMock()
+        response.read.return_value = payload
+        response.__enter__ = lambda s: s
+        response.__exit__ = lambda *a: None
+        monkeypatch.setattr(api, "refresh_token", MagicMock(return_value="token"))
+        monkeypatch.setattr(api.urllib.request, "urlopen", MagicMock(return_value=response))
+        return api.get("/1/user/-/profile.json")
+
+    @pytest.mark.parametrize(
+        "payload",
+        [b"null", b'"a string"', b"3", b"true"],
+        ids=["null", "string", "number", "bool"],
+    )
+    def test_a_scalar_body_is_reported(self, payload, monkeypatch):
+        with pytest.raises(FitbitAPIError):
+            self._get_returning(payload, monkeypatch)
+
+    def test_an_array_body_is_returned(self, monkeypatch):
+        """The shape /devices.json actually returns."""
+        assert self._get_returning(b'[{"id": "x"}]', monkeypatch) == [{"id": "x"}]
+
+    def test_an_object_body_is_returned(self, monkeypatch):
+        assert self._get_returning(b'{"ok": 1}', monkeypatch) == {"ok": 1}
+
+    def test_a_scalar_is_not_reported_as_an_auth_failure(self, monkeypatch):
+        with pytest.raises(FitbitAPIError) as caught:
+            self._get_returning(b"null", monkeypatch)
+        assert not isinstance(caught.value, FitbitAuthError)
+
+
+class TestTheArrayEndpointsSurviveTheRealClient:
+    """Exercised through the real api.get, not a patched one.
+
+    The tests for these tools patch api.get itself, so a change to what it
+    accepts is invisible to them. These two pin the contract between the
+    client and the endpoints that return arrays.
+    """
+
+    def _urlopen_returning(self, payload, monkeypatch):
+        monkeypatch.setattr(config, "OFFLINE_MODE", False)
+        response = MagicMock()
+        response.read.return_value = payload
+        response.__enter__ = lambda s: s
+        response.__exit__ = lambda *a: None
+        monkeypatch.setattr(api, "refresh_token", MagicMock(return_value="token"))
+        monkeypatch.setattr(api.urllib.request, "urlopen", MagicMock(return_value=response))
+
+    def test_devices_accepts_the_bare_array_the_endpoint_returns(self, monkeypatch):
+        from fitbit_mcp.tools import devices_tools
+
+        self._urlopen_returning(
+            b'[{"id": "1", "deviceVersion": "Sense", "batteryLevel": 80}]', monkeypatch
+        )
+        devices = devices_tools._fetch_devices()
+        assert len(devices) == 1
+
+    def test_spo2_accepts_a_list_response(self, monkeypatch):
+        from fitbit_mcp.tools import sync_tools
+
+        self._urlopen_returning(
+            b'[{"dateTime": "2026-03-10", "value": {"avg": 96, "min": 94, "max": 98}}]',
+            monkeypatch,
+        )
+        conn = db.get_db(":memory:")
+        assert sync_tools._sync_spo2(conn, date(2026, 3, 10), date(2026, 3, 10)) >= 0
+        conn.close()

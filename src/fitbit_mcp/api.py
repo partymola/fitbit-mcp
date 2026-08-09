@@ -49,7 +49,7 @@ class FitbitAPIError(Exception):
     """General API error."""
 
 
-def get(path: str, retries: int = 3) -> dict:
+def get(path: str, retries: int = 3) -> dict | list:
     """Make an authenticated GET request to the Fitbit API.
 
     Handles:
@@ -92,7 +92,7 @@ def get(path: str, retries: int = 3) -> dict:
 
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read().decode())
+                raw = resp.read()
 
         except urllib.error.HTTPError as e:
             if e.code == 401:
@@ -125,5 +125,26 @@ def get(path: str, retries: int = 3) -> dict:
                 time.sleep(backoff)
                 continue
             raise FitbitAPIError(f"Network error after {retries} attempts: {e}") from e
+
+        # Parsing is its own failure cause, not a transport one, and it is
+        # left to json.loads on the raw bytes so that an undecodable body and
+        # one that is not JSON land in the same place: both raise ValueError,
+        # which none of the handlers above catch. Either used to escape
+        # run_sync - no sync_log row, and doctor reporting a clean log while
+        # the cache aged.
+        try:
+            body = json.loads(raw)
+        except ValueError as e:
+            raise FitbitAPIError("Fitbit returned an unreadable response.") from e
+
+        # A list is a legitimate response here, not a fault: /devices.json
+        # returns a bare array, and the spo2 range endpoint returns either an
+        # array or an object. Only a scalar - a bare string, number, null - is
+        # a shape no caller can use, and it would otherwise fail at their
+        # .get() or iteration, past run_sync's handlers.
+        if not isinstance(body, (dict, list)):
+            raise FitbitAPIError("Fitbit returned an unexpected response shape.")
+
+        return body
 
     raise FitbitAuthError("Authentication failed after retry. Run: fitbit-mcp auth")

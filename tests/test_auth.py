@@ -1,5 +1,6 @@
 """Tests for the OAuth authentication module."""
 
+import json
 import os
 import time
 
@@ -65,16 +66,18 @@ class TestSaveLoadJson:
         loaded = _load_json(path)
         assert loaded == data
 
-    def test_overwrite(self, tmp_path):
-        path = tmp_path / "test.json"
-        _save_json(path, {"v": 1})
+    def test_overwrite_truncates_rather_than_leaving_a_tail(self, tmp_path):
+        """A shorter second payload must not leave bytes from the first.
+
+        Equal-length payloads cannot catch a missing O_TRUNC: the second write
+        covers the first exactly. A leftover tail makes the file unparseable,
+        which now reads as unusable credentials and sends the user to
+        re-authorise - rotating a token file the syncing host owns.
+        """
+        path = tmp_path / "tokens.json"
+        _save_json(path, {"padding": "x" * 500, "v": 1})
         _save_json(path, {"v": 2})
-        loaded = _load_json(path)
-        assert loaded["v"] == 2
-
-
-class TestRefreshToken:
-    """Test token refresh logic."""
+        assert json.loads(path.read_text()) == {"v": 2}
 
     def test_returns_cached_if_not_expired(self, tmp_path):
         import fitbit_mcp.auth as auth
@@ -116,3 +119,59 @@ class TestRefreshToken:
         finally:
             auth._cached_tokens = old_cached_tokens
             auth._cached_config = old_cached_config
+
+
+@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="POSIX mode bits; Windows uses ACLs")
+def test_an_existing_loose_token_file_is_tightened(tmp_path):
+    """O_CREAT's mode applies only at creation, so upgrades kept 0644.
+
+    An install predating the owner-only write keeps a world-readable refresh
+    token until something narrows it, and the user should not have to know to
+    run chmod by hand.
+    """
+    path = tmp_path / "tokens.json"
+    path.write_text("{}")
+    os.chmod(path, 0o644)
+
+    _save_json(path, {"refresh_token": "fictional"})
+
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+
+
+@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="POSIX mode bits; Windows uses ACLs")
+def test_the_mode_is_set_when_the_file_is_created(tmp_path, monkeypatch):
+    """Pins the open mode, not just the final one.
+
+    fchmod corrects the mode afterwards, so asserting the result alone cannot
+    tell a file that was never readable from one that was briefly 0666.
+    """
+    seen = {}
+    real_open = os.open
+
+    def spy(path, flags, mode=0o777, **kwargs):
+        seen["mode"] = mode
+        return real_open(path, flags, mode, **kwargs)
+
+    monkeypatch.setattr(os, "open", spy)
+    _save_json(tmp_path / "tokens.json", {"refresh_token": "fictional"})
+
+    assert oct(seen["mode"]) == "0o600"
+
+
+@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="POSIX mode bits; Windows uses ACLs")
+def test_a_chmod_failure_does_not_destroy_the_token(tmp_path, monkeypatch):
+    """O_TRUNC has already emptied the file by the time the mode is set.
+
+    Letting a chmod failure abort the write would trade a permissions problem
+    for a lost refresh token - and an empty file reads as unusable
+    credentials, which sends the user to re-authorise.
+    """
+
+    def refuse(fd, mode):
+        raise PermissionError("not the owner")
+
+    monkeypatch.setattr(os, "fchmod", refuse)
+    path = tmp_path / "tokens.json"
+    _save_json(path, {"refresh_token": "fictional"})
+
+    assert json.loads(path.read_text()) == {"refresh_token": "fictional"}

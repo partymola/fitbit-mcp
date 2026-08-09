@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Token files are tightened to owner-only permissions when they are rewritten, not only when first created. The tightening is best-effort: it needs ownership, and a file already emptied for rewriting must not be lost to a permissions failure. An install predating the owner-only write kept whatever the umask gave it - world-readable on a default umask - and nothing narrowed it. POSIX only: Windows governs access by ACLs.
+- A data request that gets an unreadable answer, or one whose body is a bare scalar, is reported rather than escaping. A proxy or captive portal replying to an API call with HTML, or with a body that will not decode, raised past every handler in `api.get`: the sync loop never saw it, no `sync_log` row was written, and `doctor` reported a clean log while the cache aged. Reading and parsing are now separate steps, so a transport failure and an unreadable body are both classified.
+
 ## [0.5.2] - 2026-08-09
 
 ### Fixed
