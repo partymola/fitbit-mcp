@@ -45,6 +45,29 @@ class FitbitRateLimitError(Exception):
         super().__init__(f"Rate limited. Retry in {reset_seconds}s.")
 
 
+#: Longest we will wait on a rate limit before giving up and recording it. A
+#: header asking for more is honoured up to this and no further: sleeping is
+#: done on the thread serving an MCP tool call, so an unbounded value hangs it.
+MAX_RATE_LIMIT_WAIT = 900
+
+
+def _reset_seconds(error) -> int:
+    """How long a 429 asks us to wait, bounded and never unparseable."""
+    try:
+        raw = error.headers.get("Fitbit-Rate-Limit-Reset", MAX_RATE_LIMIT_WAIT)
+    except AttributeError:
+        return MAX_RATE_LIMIT_WAIT
+    try:
+        # float first: a fractional value is a number of seconds, not a
+        # malformed header, and int() alone would discard it for the fallback.
+        seconds = int(float(raw))
+    except (TypeError, ValueError):
+        return MAX_RATE_LIMIT_WAIT
+    if seconds < 0:
+        return 0
+    return min(seconds, MAX_RATE_LIMIT_WAIT)
+
+
 class FitbitAPIError(Exception):
     """General API error."""
 
@@ -105,19 +128,8 @@ def get(path: str, retries: int = 3) -> dict | list:
                 raise FitbitAuthError("Authentication failed after retry. Run: fitbit-mcp auth")
 
             if e.code == 429:
-                try:
-                    reset_secs = int(e.headers.get("Fitbit-Rate-Limit-Reset", 3600))
-                except (TypeError, ValueError):
-                    reset_secs = 3600
-                raise FitbitRateLimitError(reset_secs)
+                raise FitbitRateLimitError(_reset_seconds(e))
 
-            # The body is logged, never raised: this message reaches sync_log
-            # and the MCP client, and a Fitbit error body can quote the
-            # measurement that caused it.
-            try:
-                logger.debug("API error %s body: %s", e.code, e.read().decode()[:200])
-            except Exception:
-                pass
             raise FitbitAPIError(f"API error {e.code} for {path}")
 
         # A read timeout raises bare TimeoutError (not wrapped in URLError); a
@@ -126,10 +138,10 @@ def get(path: str, retries: int = 3) -> dict | list:
         except (TimeoutError, urllib.error.URLError) as e:
             if attempt < retries - 1:
                 backoff = 2 ** (attempt + 1)
-                logger.warning("Network error (%s), retrying in %ss", e, backoff)
+                logger.warning("Network error (%s), retrying in %ss", type(e).__name__, backoff)
                 time.sleep(backoff)
                 continue
-            raise FitbitAPIError(f"Network error after {retries} attempts: {e}") from e
+            raise FitbitAPIError("Network error. Check your connection.") from e
 
         # Deliberately outside the transport try: neither handler above
         # catches ValueError.

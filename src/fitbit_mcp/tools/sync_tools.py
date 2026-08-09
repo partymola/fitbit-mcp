@@ -636,18 +636,10 @@ def _run_sync_types(conn, data_types, results, since_date, until_date, today, da
                 "range": f"{start_date} to {end_date}",
             }
 
-        # FitbitOfflineError is intentionally not handled like the errors
-        # below: it must propagate to require_auth / the CLI sync handler so
-        # offline mode returns one clean message instead of per-type error
-        # rows. We only intercept it to close the connection, then re-raise.
         except api.FitbitRateLimitError as e:
             db.log_sync(conn, dtype, "partial", notes="rate limited")
             results[dtype] = {"status": "rate_limited", "message": str(e)}
         except api.FitbitAuthError as e:
-            # Logged as auth_error, not error: doctor grades the two
-            # differently, and a dead token is the one that will not clear
-            # itself. Writing "error" here left doctor's auth branch dead, so a
-            # revoked token read as a warning and exited zero.
             db.log_sync(conn, dtype, "auth_error", notes=str(e))
             results[dtype] = {"status": "auth_error", "message": str(e)}
         except api.FitbitAPIError as e:
@@ -677,14 +669,16 @@ def auto_sync_if_stale(data_type: str) -> None:
     if config.OFFLINE_MODE:
         return
 
-    conn = db.get_db()
-    last_sync = db.get_last_sync_time(conn, data_type)
-    conn.close()
-
-    if last_sync is not None and last_sync.date() >= date.today():
-        return
-
     try:
+        conn = db.get_db()
+        try:
+            last_sync = db.get_last_sync_time(conn, data_type)
+        finally:
+            conn.close()
+
+        if last_sync is not None and last_sync.date() >= date.today():
+            return
+
         run_sync([data_type])
     except Exception:
         logger.debug("Auto-sync failed for %s", data_type, exc_info=True)

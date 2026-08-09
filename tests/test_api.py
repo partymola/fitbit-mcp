@@ -122,14 +122,32 @@ class TestAPIGet:
         import urllib.error
 
         mock_refresh.return_value = "token"
-        headers = {"Fitbit-Rate-Limit-Reset": "3600.0"}
+        headers = {"Fitbit-Rate-Limit-Reset": "not a number"}
         mock_urlopen.side_effect = urllib.error.HTTPError(
             "url", 429, "Too Many Requests", headers, None
         )
 
         with pytest.raises(FitbitRateLimitError) as exc_info:
             get("/1/user/-/test.json")
-        assert exc_info.value.reset_seconds == 3600
+        assert exc_info.value.reset_seconds == 900
+
+    @patch("fitbit_mcp.api.refresh_token")
+    @patch("fitbit_mcp.api.urllib.request.urlopen")
+    def test_a_network_failure_carries_no_path(self, mock_urlopen, mock_refresh):
+        """run_sync writes this into sync_log and returns it to the client.
+
+        A TLS or socket failure's own text is an absolute filesystem path.
+        """
+        import urllib.error
+
+        mock_refresh.return_value = "token"
+        mock_urlopen.side_effect = urllib.error.URLError(
+            OSError(2, "No such file or directory: '/home/someone/certs/ca.pem'")
+        )
+
+        with pytest.raises(FitbitAPIError) as exc_info:
+            get("/1/user/-/test.json", retries=1)
+        assert "/home/someone" not in str(exc_info.value)
 
     @patch("fitbit_mcp.api.refresh_token")
     @patch("fitbit_mcp.api.urllib.request.urlopen")
@@ -175,6 +193,51 @@ class TestAPIGet:
 
         with pytest.raises(FitbitAuthError):
             get("/1/user/-/test.json", retries=2)
+
+
+class TestTheRateLimitWait:
+    """The wait happens on the thread serving an MCP tool call.
+
+    An unbounded or unparseable header hangs it, so the value is clamped and
+    a fractional one is seconds rather than a reason to fall back.
+    """
+
+    def _reset_for(self, header):
+        import urllib.error
+
+        from fitbit_mcp.api import _reset_seconds
+
+        return _reset_seconds(
+            urllib.error.HTTPError("url", 429, "TMR", {"Fitbit-Rate-Limit-Reset": header}, None)
+        )
+
+    def test_a_fractional_header_keeps_its_value(self):
+        assert self._reset_for("60.5") == 60
+
+    def test_a_whole_number_is_unchanged(self):
+        assert self._reset_for("600") == 600
+
+    def test_an_enormous_header_is_capped(self):
+        from fitbit_mcp.api import MAX_RATE_LIMIT_WAIT
+
+        assert self._reset_for("86400") == MAX_RATE_LIMIT_WAIT
+
+    def test_an_unparseable_header_falls_back_within_the_cap(self):
+        from fitbit_mcp.api import MAX_RATE_LIMIT_WAIT
+
+        assert self._reset_for("soon") == MAX_RATE_LIMIT_WAIT
+
+    def test_a_negative_header_does_not_become_a_negative_sleep(self):
+        assert self._reset_for("-5") == 0
+
+    def test_absent_headers_do_not_raise(self):
+        import urllib.error
+
+        from fitbit_mcp.api import MAX_RATE_LIMIT_WAIT, _reset_seconds
+
+        assert _reset_seconds(urllib.error.HTTPError("url", 429, "TMR", None, None)) == (
+            MAX_RATE_LIMIT_WAIT
+        )
 
 
 class TestOfflineMode:

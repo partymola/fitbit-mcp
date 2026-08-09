@@ -191,6 +191,33 @@ class TestTheCallbackPage:
         assert "<script>" not in page
         assert "&lt;script&gt;" in page
 
+    def test_the_handler_builds_its_page_through_the_helper(self):
+        """The helper being correct is no use if the handler stops calling it.
+
+        The handler is a closure inside setup_auth and cannot be imported, so
+        this reads the source: every write to wfile in that function must go
+        through _callback_page, never an f-string of its own.
+        """
+        import ast
+        import inspect
+
+        from fitbit_mcp import auth
+
+        tree = ast.parse(inspect.getsource(auth.setup_auth))
+        writes = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "write"
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "wfile"
+        ]
+        assert writes, "no wfile.write found - has the callback handler moved?"
+        for call in writes:
+            source = ast.unparse(call)
+            assert "_callback_page(" in source, f"unescaped page built at: {source}"
+
     def test_an_ordinary_message_still_reads_normally(self):
         from fitbit_mcp.auth import _callback_page
 

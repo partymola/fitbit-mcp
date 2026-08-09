@@ -982,3 +982,33 @@ def test_a_database_that_cannot_record_the_failure_does_not_escape(tmp_path, mon
 
     assert results["sleep"]["status"] == "error"
     assert closed == [True]
+
+
+def test_auto_sync_closes_its_connection_even_when_the_lookup_fails(tmp_path, monkeypatch):
+    """Its own read is outside run_sync, so nothing else closes for it."""
+    from fitbit_mcp import db as db_module
+    from fitbit_mcp.tools import sync_tools
+
+    real = db_module.get_db(tmp_path / "fitbit.db")
+    closed = []
+
+    class _WatchedConn:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def close(self):
+            closed.append(True)
+            real.close()
+
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+    monkeypatch.setattr(sync_tools.db, "get_db", lambda *a, **k: _WatchedConn())
+    monkeypatch.setattr(
+        sync_tools.db,
+        "get_last_sync_time",
+        MagicMock(side_effect=sqlite3.DatabaseError("malformed database image")),
+    )
+    monkeypatch.setattr(sync_tools, "run_sync", MagicMock())
+
+    sync_tools.auto_sync_if_stale("sleep")
+
+    assert closed == [True]
