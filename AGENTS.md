@@ -47,6 +47,23 @@ Everything else must not carry one, and that includes every `logger.*` call. Log
 
 Three ordering rules in `run_sync` are load-bearing and easy to undo. `FitbitOfflineError` must keep a clause of its own before the trailing catch-all, or offline mode turns into per-type error rows instead of one clean message; it no longer closes the connection, because the `finally` does. A failure is logged `auth_error` rather than `error` because `doctor` grades the two differently and a dead token is the one that will not clear itself. And the rate-limit wait is bounded by `api.MAX_RATE_LIMIT_WAIT`: the sleep happens on the thread serving an MCP tool call, so an unbounded header hangs it. Pinned by `test_offline_error_propagates_and_closes` and the `TestTheRateLimitWait` cases.
 
+## Seams the suite does not cross
+
+A claim sits at a seam when **no input to the program can make its test fail**. Behavioural tests answer "given this input, what happens"; these are about structure, packaging, or which surface an output lands on. Every leak and every false invariant found in this repo has been at one of them, so check these by execution when they change.
+
+Crossed, and by what:
+
+- **Closures that cannot be imported.** `CallbackHandler` lives inside `setup_auth`, so the only way to check it is to read the source. `TestTheCallbackPage` does, three ways: the page escapes what it shows, every `wfile` write goes through `_callback_page`, and the exception reaches the user only as `type(e).__name__` and is never reached unbound.
+- **The module import graph.** No behavioural test can see an unused import, and `doctor` importing `auth` or `api` would let a diagnostic rotate a token another host owns. `TestDoctorStaysOffline`.
+- **Which code may print a path.** `test_no_logger_call_in_shared_code_carries_a_path` in `tests/test_seams.py`. Key on the logging *method*, not on the receiver's name - `logging.getLogger(__name__).info` is the same call as `logger.info` and a name match misses it.
+- **Packaging consistency.** `test_the_declared_version_and_the_lockfile_agree`, same file.
+
+Crossed only from outside this repo, which an outside contributor will not have:
+
+- **The mock boundary.** Tool tests patch `api.get`, so the mock sits above the real client and a change to what it accepts or returns is invisible to most of the suite. Partially crossed by the two tests that drive `devices` and `spo2` through the real client - the pattern to copy when a change touches that layer.
+- **The wire contract.** The suite calls tool functions directly and never the server, so tool names, descriptions and schemas are untested. Dump the tool list and schemas from a real server and diff them across the change.
+- **The pre-commit guard.** `scripts/check-no-data.sh` is not exercised by pytest at all. Stage a probe file per class and check reject against expectation.
+
 ## Database schema
 
 SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). The exact column definitions live in `SCHEMA` in `src/fitbit_mcp/db.py` (the source of truth); the list below is a navigational overview that also notes the non-obvious semantics.
