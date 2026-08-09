@@ -567,6 +567,13 @@ def run_sync(
     conn = db.get_db()
     results = {}
 
+    try:
+        return _run_sync_types(conn, data_types, results, since_date, until_date, today, days)
+    finally:
+        conn.close()
+
+
+def _run_sync_types(conn, data_types, results, since_date, until_date, today, days):
     for dtype in data_types:
         try:
             if since_date is not None:
@@ -647,20 +654,15 @@ def run_sync(
             db.log_sync(conn, dtype, "error", notes=str(e))
             results[dtype] = {"status": "error", "message": str(e)}
         except api.FitbitOfflineError:
-            conn.close()
             raise
         except Exception as e:
-            # Anything the handlers above did not name still gets a row. Shape
-            # guards in api.get cannot cover this: a response of an unexpected
-            # but valid shape fails at the caller instead, as an AttributeError
-            # or a KeyError, and auto_sync_if_stale swallows whatever escapes -
-            # leaving no record that syncing stopped and a clean-looking
-            # doctor. Only the exception type is recorded: these paths carry
-            # API responses, and a message built from one could hold anything.
-            db.log_sync(conn, dtype, "error", notes=f"unexpected {type(e).__name__}")
+            # Type only: these paths carry API responses.
+            try:
+                db.log_sync(conn, dtype, "error", notes=f"unexpected {type(e).__name__}")
+            except Exception:
+                logger.error("Could not record a failed sync of %s", dtype)
             results[dtype] = {"status": "error", "message": "Unexpected error during sync."}
 
-    conn.close()
     return results
 
 

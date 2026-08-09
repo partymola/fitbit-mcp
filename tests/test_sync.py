@@ -1,5 +1,6 @@
 """Tests for the sync tool logic."""
 
+import sqlite3
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -928,11 +929,13 @@ def test_an_unnamed_failure_still_leaves_a_sync_log_row(tmp_path, monkeypatch):
     rows = reopened.execute("SELECT status, notes FROM sync_log").fetchall()
     reopened.close()
     assert rows and rows[0][0] == "error"
-    assert "AttributeError" in rows[0][1]
+    assert rows[0][1] == "unexpected AttributeError"
 
 
 def test_the_unnamed_failure_message_carries_no_response_content(tmp_path, monkeypatch):
     """sync_log stores this, and these paths carry API responses."""
+    import sqlite3
+
     from fitbit_mcp import db as db_module
     from fitbit_mcp.tools import sync_tools
 
@@ -944,3 +947,38 @@ def test_the_unnamed_failure_message_carries_no_response_content(tmp_path, monke
 
     results = sync_tools.run_sync(["sleep"], days=1)
     assert "/etc/secret/path" not in results["sleep"]["message"]
+    reopened = sqlite3.connect(db_path)
+    notes = reopened.execute("SELECT notes FROM sync_log").fetchone()[0]
+    reopened.close()
+    assert notes == "unexpected KeyError"
+
+
+def test_a_database_that_cannot_record_the_failure_does_not_escape(tmp_path, monkeypatch):
+    """The row is best-effort; losing it must not also lose the connection."""
+    from fitbit_mcp import db as db_module
+    from fitbit_mcp.tools import sync_tools
+
+    real = db_module.get_db(tmp_path / "fitbit.db")
+    closed = []
+
+    class _WatchedConn:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def close(self):
+            closed.append(True)
+            real.close()
+
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+    monkeypatch.setattr(sync_tools.db, "get_db", lambda *a, **k: _WatchedConn())
+    monkeypatch.setattr(sync_tools.api, "get", MagicMock(side_effect=AttributeError("boom")))
+    monkeypatch.setattr(
+        sync_tools.db,
+        "log_sync",
+        MagicMock(side_effect=sqlite3.OperationalError("attempt to write a readonly database")),
+    )
+
+    results = sync_tools.run_sync(["sleep"], days=1)
+
+    assert results["sleep"]["status"] == "error"
+    assert closed == [True]

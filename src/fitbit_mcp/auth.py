@@ -6,6 +6,7 @@ Access tokens expire in 8 hours, refresh tokens in 90 days.
 
 import base64
 import hashlib
+import html
 import json
 import logging
 import os
@@ -214,6 +215,14 @@ def invalidate_token_cache():
         _cached_tokens = None
 
 
+def _callback_page(message):
+    """Build the page the OAuth callback returns.
+
+    Escaped: message can carry a query-string parameter.
+    """
+    return f"<html><body><h2>{html.escape(message)}</h2></body></html>"
+
+
 def setup_auth():
     """Interactive OAuth setup. Prompts for client ID, opens browser, exchanges code."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -284,7 +293,7 @@ def setup_auth():
             self.send_response(status_code)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            self.wfile.write(f"<html><body><h2>{message}</h2></body></html>".encode())
+            self.wfile.write(_callback_page(message).encode())
 
         def log_message(self, format, *args):
             pass

@@ -179,3 +179,21 @@ def test_a_chmod_failure_does_not_destroy_the_token(tmp_path, monkeypatch):
     _save_json(path, {"refresh_token": "fictional"})
 
     assert json.loads(path.read_text()) == {"refresh_token": "fictional"}
+
+
+class TestTheCallbackPage:
+    """The callback reflects a query-string parameter back to the browser."""
+
+    def test_a_script_tag_is_escaped(self):
+        from fitbit_mcp.auth import _callback_page
+
+        page = _callback_page("Error: <script>alert(1)</script>")
+        assert "<script>" not in page
+        assert "&lt;script&gt;" in page
+
+    def test_an_ordinary_message_still_reads_normally(self):
+        from fitbit_mcp.auth import _callback_page
+
+        assert "Authorised! You can close this tab." in _callback_page(
+            "Authorised! You can close this tab."
+        )

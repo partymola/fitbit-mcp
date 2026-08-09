@@ -105,15 +105,20 @@ def get(path: str, retries: int = 3) -> dict | list:
                 raise FitbitAuthError("Authentication failed after retry. Run: fitbit-mcp auth")
 
             if e.code == 429:
-                reset_secs = int(e.headers.get("Fitbit-Rate-Limit-Reset", 3600))
+                try:
+                    reset_secs = int(e.headers.get("Fitbit-Rate-Limit-Reset", 3600))
+                except (TypeError, ValueError):
+                    reset_secs = 3600
                 raise FitbitRateLimitError(reset_secs)
 
-            body = ""
+            # The body is logged, never raised: this message reaches sync_log
+            # and the MCP client, and a Fitbit error body can quote the
+            # measurement that caused it.
             try:
-                body = e.read().decode()[:200]
+                logger.debug("API error %s body: %s", e.code, e.read().decode()[:200])
             except Exception:
                 pass
-            raise FitbitAPIError(f"API error {e.code} for {path}: {body}")
+            raise FitbitAPIError(f"API error {e.code} for {path}")
 
         # A read timeout raises bare TimeoutError (not wrapped in URLError); a
         # connection-level failure raises URLError. Both are transient for an

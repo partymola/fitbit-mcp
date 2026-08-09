@@ -116,6 +116,46 @@ class TestAPIGet:
 
     @patch("fitbit_mcp.api.refresh_token")
     @patch("fitbit_mcp.api.urllib.request.urlopen")
+    def test_a_non_integer_reset_header_is_not_an_unclassified_failure(
+        self, mock_urlopen, mock_refresh
+    ):
+        import urllib.error
+
+        mock_refresh.return_value = "token"
+        headers = {"Fitbit-Rate-Limit-Reset": "3600.0"}
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            "url", 429, "Too Many Requests", headers, None
+        )
+
+        with pytest.raises(FitbitRateLimitError) as exc_info:
+            get("/1/user/-/test.json")
+        assert exc_info.value.reset_seconds == 3600
+
+    @patch("fitbit_mcp.api.refresh_token")
+    @patch("fitbit_mcp.api.urllib.request.urlopen")
+    def test_an_error_body_never_reaches_the_message(self, mock_urlopen, mock_refresh):
+        """This message reaches sync_log and the MCP client.
+
+        A Fitbit error body can quote the measurement that caused it.
+        """
+        import urllib.error
+
+        mock_refresh.return_value = "token"
+        body = b'{"errors":[{"message":"restingHeartRate 47 for user ABC123 is invalid"}]}'
+        error = urllib.error.HTTPError("url", 500, "Internal Server Error", {}, None)
+        error.read = MagicMock(return_value=body)
+        mock_urlopen.side_effect = error
+
+        with pytest.raises(FitbitAPIError) as exc_info:
+            get("/1/user/-/test.json")
+
+        message = str(exc_info.value)
+        assert "restingHeartRate" not in message
+        assert "ABC123" not in message
+        assert "500" in message
+
+    @patch("fitbit_mcp.api.refresh_token")
+    @patch("fitbit_mcp.api.urllib.request.urlopen")
     def test_network_error(self, mock_urlopen, mock_refresh):
         import urllib.error
 
