@@ -68,12 +68,8 @@ def _save_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        # Best-effort tightening, inside the try and never fatal. The mode on
-        # os.open applies only when the file is created, so a file from an
-        # install that predates it keeps its old mode; but O_TRUNC has already
-        # emptied the file by this point, so letting a chmod failure abort the
-        # write would destroy a working token to fix its permissions. Needs
-        # ownership, which the writer does not always have.
+        # Best-effort: O_TRUNC has already emptied the file, so a
+        # permissions failure must not take the token with it.
         if hasattr(os, "fchmod"):
             try:
                 os.fchmod(fd, 0o600)
@@ -197,17 +193,10 @@ def _refresh_token() -> str:
 def refresh_token() -> str:
     """Return a valid access token, refreshing if expired.
 
-    The boundary that classifies every way obtaining a token can fail. Only
-    TokenRefused means the credentials were rejected; everything else becomes
-    RefreshNetworkError, by construction rather than by listing the exception
-    types that happen to occur. Enumerating them is what went wrong before:
-    each round of fixes found another type nobody had thought of - a bare
-    OSError, an http.client exception that is not an OSError at all, a decode
-    failure that is a ValueError - and each one was graded a dead credential.
-
-    A bug inside the refresh therefore reports as a network failure rather
-    than a refusal. That is the safe direction: it is still recorded and still
-    visible, and it does not tell anyone to rotate a shared token file.
+    Raises exactly two types: TokenRefused, and RefreshNetworkError for
+    everything else. Never replace the catch-all with a list of exception
+    types - anything unanticipated then reads as a dead credential, and that
+    answer rotates a shared token file.
     """
     try:
         return _refresh_token()

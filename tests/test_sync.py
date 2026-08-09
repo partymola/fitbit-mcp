@@ -1,7 +1,7 @@
 """Tests for the sync tool logic."""
 
 from datetime import date, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fitbit_mcp import db
 from fitbit_mcp.tools.sync_tools import (
@@ -904,3 +904,43 @@ class TestAutoSyncOffline:
         mock_last_sync.return_value = None
         auto_sync_if_stale("heart_rate")
         mock_run_sync.assert_called_once()
+
+
+def test_an_unnamed_failure_still_leaves_a_sync_log_row(tmp_path, monkeypatch):
+    """Pins the catch-all: sync_log is the only record a run leaves."""
+    import sqlite3
+
+    from fitbit_mcp import db as db_module
+    from fitbit_mcp.tools import sync_tools
+
+    db_path = tmp_path / "fitbit.db"
+    conn = db_module.get_db(db_path)
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+    monkeypatch.setattr(sync_tools.db, "get_db", lambda *a, **k: conn)
+    monkeypatch.setattr(
+        sync_tools.api, "get", MagicMock(side_effect=AttributeError("'list' object has no get"))
+    )
+
+    results = sync_tools.run_sync(["sleep"], days=1)
+
+    assert results["sleep"]["status"] == "error"
+    reopened = sqlite3.connect(db_path)
+    rows = reopened.execute("SELECT status, notes FROM sync_log").fetchall()
+    reopened.close()
+    assert rows and rows[0][0] == "error"
+    assert "AttributeError" in rows[0][1]
+
+
+def test_the_unnamed_failure_message_carries_no_response_content(tmp_path, monkeypatch):
+    """sync_log stores this, and these paths carry API responses."""
+    from fitbit_mcp import db as db_module
+    from fitbit_mcp.tools import sync_tools
+
+    db_path = tmp_path / "fitbit.db"
+    conn = db_module.get_db(db_path)
+    monkeypatch.setattr("fitbit_mcp.config.OFFLINE_MODE", False)
+    monkeypatch.setattr(sync_tools.db, "get_db", lambda *a, **k: conn)
+    monkeypatch.setattr(sync_tools.api, "get", MagicMock(side_effect=KeyError("/etc/secret/path")))
+
+    results = sync_tools.run_sync(["sleep"], days=1)
+    assert "/etc/secret/path" not in results["sleep"]["message"]

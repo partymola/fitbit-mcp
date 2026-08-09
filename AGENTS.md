@@ -37,6 +37,8 @@ The `scripts/check-no-data.sh` pre-commit hook rejects database files, config se
 
 `get_*` and `fitbit_trends` call `auto_sync_if_stale(data_type)` before querying: it triggers an incremental sync if the last successful sync for that data type was before today (checked via `sync_log`), at most once per data type per day. Failures are swallowed silently - the cache query proceeds regardless.
 
+That silence is why `run_sync` ends its per-type loop with a catch-all writing an `error` row: `sync_log` is the only record any failure leaves, and anything escaping the named handlers escapes into that bare `except`, leaving `doctor` reporting a clean log while the cache ages. **Keep the catch-all, and keep the row's notes to the exception type** - these paths carry API responses, and a message built from one could hold anything. Pinned by `test_an_unnamed_failure_still_leaves_a_sync_log_row` and `test_the_unnamed_failure_message_carries_no_response_content` in `tests/test_sync.py`.
+
 ## Database schema
 
 SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). The exact column definitions live in `SCHEMA` in `src/fitbit_mcp/db.py` (the source of truth); the list below is a navigational overview that also notes the non-obvious semantics.

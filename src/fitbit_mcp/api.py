@@ -126,12 +126,8 @@ def get(path: str, retries: int = 3) -> dict | list:
                 continue
             raise FitbitAPIError(f"Network error after {retries} attempts: {e}") from e
 
-        # Parsing is its own failure cause, not a transport one, and it is
-        # left to json.loads on the raw bytes so that an undecodable body and
-        # one that is not JSON land in the same place: both raise ValueError,
-        # which none of the handlers above catch. Either used to escape
-        # run_sync - no sync_log row, and doctor reporting a clean log while
-        # the cache aged.
+        # Deliberately outside the transport try: neither handler above
+        # catches ValueError.
         try:
             body = json.loads(raw)
         except ValueError as e:

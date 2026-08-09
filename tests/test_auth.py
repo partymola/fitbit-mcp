@@ -79,6 +79,10 @@ class TestSaveLoadJson:
         _save_json(path, {"v": 2})
         assert json.loads(path.read_text()) == {"v": 2}
 
+
+class TestRefreshToken:
+    """Test token refresh logic."""
+
     def test_returns_cached_if_not_expired(self, tmp_path):
         import fitbit_mcp.auth as auth
 
