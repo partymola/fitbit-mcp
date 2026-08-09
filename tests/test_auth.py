@@ -225,11 +225,18 @@ class TestTheCallbackPage:
             "Authorised! You can close this tab."
         )
 
-    def test_no_exception_is_interpolated_whole_into_the_flow(self):
-        """The page and stderr both carry what setup_auth formats.
+    def test_the_exception_reaches_the_user_only_as_its_type(self):
+        """A whitelist, not a list of banned shapes.
 
-        A TLS failure's own text is a filesystem path and a decode failure's
-        is response bytes, so only the type name may be interpolated.
+        The page and stderr both carry what setup_auth formats, and the
+        exception's own text is a filesystem path for a TLS failure and
+        response bytes for a decode failure. Any expression form can carry
+        it - a call argument, a concatenation, e.args[0], a walrus - so
+        listing the ones seen so far only ever closes the last instance.
+        The bound name is permitted inside type(e).__name__ and nowhere else.
+
+        Deliberately strict about `raise X from e`: nothing here is meant to
+        escape to the user's terminal as a chained traceback.
         """
         import ast
         import inspect
@@ -237,20 +244,25 @@ class TestTheCallbackPage:
         from fitbit_mcp import auth
 
         tree = ast.parse(inspect.getsource(auth.setup_auth))
-        # Every expression the exception could travel through, not only
-        # f-strings: it reaches the user by two routes, and the assignment to
-        # auth_result["error"] is printed to stderr later. An earlier version
-        # walked FormattedValue alone and could not see that half. It also
-        # unparsed the FormattedValue rather than its .value, which yields
-        # "{e}" with the braces and matches nothing.
-        carriers = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FormattedValue):
-                carriers.add(ast.unparse(node.value))
-            elif isinstance(node, ast.Assign):
-                carriers.add(ast.unparse(node.value))
-
-        for banned in ("e", "str(e)", "repr(e)"):
-            assert banned not in carriers, (
-                f"exception carried whole via {banned!r}: {sorted(carriers)}"
-            )
+        offenders = []
+        for handler in (n for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler)):
+            if not handler.name:
+                continue
+            allowed = {
+                id(node.value.args[0])
+                for node in ast.walk(handler)
+                if isinstance(node, ast.Attribute)
+                and node.attr == "__name__"
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)
+                and node.value.func.id == "type"
+                and len(node.value.args) == 1
+            }
+            offenders += [
+                ast.unparse(node)
+                for node in ast.walk(handler)
+                if isinstance(node, ast.Name)
+                and node.id == handler.name
+                and id(node) not in allowed
+            ]
+        assert not offenders, f"exception used outside type(e).__name__: {offenders}"

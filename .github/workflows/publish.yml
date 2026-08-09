@@ -20,7 +20,9 @@ jobs:
       - run: python -m build
       - name: Guard against secrets in the sdist
         run: |
-          if tar tzf dist/*.tar.gz | grep -Ei 'tokens?\.json|\.db($|\.)|\.env$'; then
+          # By location, not by name: the pre-commit guard was an extension
+          # list until it was found to match none of the credential dotfiles.
+          if tar tzf dist/*.tar.gz | grep -Ei '(^|/)config/|tokens?\.json|\.db($|\.)|\.env$'; then
             echo "::error::secret-shaped file in sdist"; exit 1
           fi
       - run: twine check dist/*
