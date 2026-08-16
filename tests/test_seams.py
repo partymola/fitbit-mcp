@@ -167,3 +167,90 @@ class TestTheMigrationLockstep:
                 for column in after[table] - columns
             }
         assert added == doctor._SELF_HEALING_COLUMNS
+
+    def test_every_table_is_accounted_for_by_the_lists_that_enumerate_them(self):
+        """Two lists restate SCHEMA's tables, and a table missing from either fails quietly.
+
+        The exclusions are named rather than inferred, so each stays a
+        decision: core_temperature is written with INSERT OR IGNORE, and
+        sync_log holds no dated measurement.
+        """
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.executescript(db.SCHEMA)
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+            }
+            assert set(db._UPSERT_KEYS) == tables - {"core_temperature", "sync_log"}
+            assert set(db._DATA_TABLE_MAP) == tables - {"sync_log"}
+            assert all(t == name for name, t in db._DATA_TABLE_MAP.items())
+
+            for table, keys in db._UPSERT_KEYS.items():
+                primary = {r[1] for r in conn.execute(f"PRAGMA table_info('{table}')") if r[5]}
+                assert set(keys) == primary, f"{table} is not keyed by its primary key"
+        finally:
+            conn.close()
+
+    def test_no_save_helper_reaches_the_database_except_through_the_upsert(
+        self, tmp_db, monkeypatch
+    ):
+        """A helper running its own statement keeps the old behaviour unnoticed.
+
+        Only five of the twelve upserted tables have a preservation test, so
+        reverting one of the other seven passes the whole suite while its
+        _UPSERT_KEYS entry stays and means nothing.
+
+        With _upsert stubbed out, a row that still lands in the table was
+        written some other way. Asking what reached the database rather than
+        how the call was spelled is the point: REPLACE INTO is a synonym for
+        INSERT OR REPLACE INTO, executemany is the natural idiom for a bulk
+        importer, and a statement can always be run one function further down.
+        """
+        helpers = {
+            node.name: "exercises"
+            if node.name == "save_exercise"
+            else node.name.removeprefix("save_")
+            for node in ast.parse(Path(db.__file__).read_text()).body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("save_")
+        }
+        assert len(helpers) > 1
+        # Both directions, or a table whose writer is named anything else is
+        # never driven and the check quietly stops covering it.
+        unwritten = set(db._UPSERT_KEYS) - set(helpers.values())
+        assert not unwritten, f"no save_ helper for {sorted(unwritten)}"
+
+        seen: list[str] = []
+        monkeypatch.setattr(db, "_upsert", lambda conn, table, row: seen.append(table))
+
+        for name, table in helpers.items():
+            if name == "save_core_temperature":
+                continue
+            assert table in db._UPSERT_KEYS, f"{name} has no table"
+            row = {
+                c: "2026-03-10" if c == "date" else None
+                for c in (r[1] for r in tmp_db.execute(f"PRAGMA table_info('{table}')"))
+            }
+            seen.clear()
+            if name == "save_heart_rate":
+                db.save_heart_rate(tmp_db, row["date"], None, [])
+            elif name == "save_exercise":
+                db.save_exercise(tmp_db, "log1", {k: v for k, v in row.items() if k != "log_id"})
+            else:
+                getattr(db, name)(tmp_db, row)
+
+            assert seen == [table], f"{name} did not upsert into {table}"
+            stored = tmp_db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            assert stored == 0, f"{name} wrote {stored} row(s) with _upsert stubbed out"
+
+        # Keyed by (datetime, temp_celsius), so a changed reading is a new row
+        # rather than a correction - the one helper that must not upsert.
+        seen.clear()
+        db.save_core_temperature(
+            tmp_db, {"datetime": "2026-03-10T07:00:00", "date": "2026-03-10", "temp_celsius": 36.6}
+        )
+        assert tmp_db.execute("SELECT COUNT(*) FROM core_temperature").fetchone()[0] == 1
+        assert seen == [], "save_core_temperature must not upsert"

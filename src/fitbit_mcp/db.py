@@ -157,112 +157,101 @@ def get_db(db_path: Path | str | None = None) -> sqlite3.Connection:
 
 # --- Save helpers ---
 
+# The conflict target for each table an upsert writes. core_temperature is
+# absent deliberately: its primary key is (datetime, temp_celsius), so a
+# changed reading is a new row rather than a correction, and it keeps the
+# INSERT OR IGNORE below. sync_log is append-only.
+_UPSERT_KEYS: dict[str, tuple[str, ...]] = {
+    "heart_rate": ("date",),
+    "activity": ("date",),
+    "exercises": ("log_id",),
+    "sleep": ("date",),
+    "weight": ("date",),
+    "spo2": ("date",),
+    "hrv": ("date",),
+    "azm": ("date",),
+    "breathing_rate": ("date",),
+    "skin_temperature": ("date",),
+    "cardio_fitness": ("date",),
+    "food_log": ("date",),
+}
+
+
+def _upsert(conn: sqlite3.Connection, table: str, row: dict) -> None:
+    """Write `row`, leaving the columns it does not name as they were.
+
+    Omitting a column and passing it as None are different instructions.
+    The second writes NULL, which is how a value a provider has withdrawn
+    gets cleared.
+    """
+    keys = _UPSERT_KEYS[table]
+    known = {r[1] for r in conn.execute(f"PRAGMA table_info('{table}')")}
+    unknown = sorted(set(row) - known)
+    if unknown:
+        raise ValueError(f"{table} has no column(s) {', '.join(unknown)}")
+    absent = [k for k in keys if row.get(k) is None]
+    if absent:
+        raise ValueError(f"{table} needs {', '.join(absent)} to identify the row")
+
+    columns = list(row)
+    updatable = [c for c in columns if c not in keys]
+    if not updatable:
+        # A row carrying nothing but its key has nothing to store, and inserting
+        # it would date-stamp a day whose values never arrived.
+        return
+
+    # Nothing reaches this SQL text unchecked: every name is a column the table has.
+    conn.execute(
+        f"INSERT INTO {table} ({', '.join(columns)}) "
+        f"VALUES ({', '.join(':' + c for c in columns)}) "
+        f"ON CONFLICT({', '.join(keys)}) DO UPDATE SET "
+        + ", ".join(f"{c} = excluded.{c}" for c in updatable),
+        row,
+    )
+
 
 def save_heart_rate(conn: sqlite3.Connection, date: str, resting_hr: int | None, zones: list):
-    conn.execute(
-        "INSERT OR REPLACE INTO heart_rate (date, resting_hr, zones) VALUES (?, ?, ?)",
-        (date, resting_hr, json.dumps(zones)),
+    _upsert(
+        conn,
+        "heart_rate",
+        {"date": date, "resting_hr": resting_hr, "zones": json.dumps(zones)},
     )
 
 
 def save_activity(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO activity
-        (date, steps, calories_out, active_minutes, very_active_minutes,
-         fairly_active_minutes, lightly_active_minutes, sedentary_minutes,
-         floors, distance_km)
-        VALUES (:date, :steps, :calories_out, :active_minutes, :very_active_minutes,
-                :fairly_active_minutes, :lightly_active_minutes, :sedentary_minutes,
-                :floors, :distance_km)""",
-        row,
-    )
+    _upsert(conn, "activity", row)
 
 
 def save_exercise(conn: sqlite3.Connection, log_id: str, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO exercises
-        (log_id, date, name, duration_min, calories, avg_hr, steps,
-         distance_km, distance_unit, start_time, source, log_type)
-        VALUES (:log_id, :date, :name, :duration_min, :calories, :avg_hr, :steps,
-                :distance_km, :distance_unit, :start_time, :source, :log_type)""",
-        {"log_id": log_id, **row},
-    )
+    _upsert(conn, "exercises", {"log_id": log_id, **row})
 
 
 def save_sleep(conn: sqlite3.Connection, row: dict):
-    # Default every optional column via .get() so callers that supply only a
-    # subset (e.g. the Takeout importer) store NULL rather than raising.
-    params = {
-        "date": row["date"],
-        "total_minutes": row.get("total_minutes"),
-        "efficiency": row.get("efficiency"),
-        "start_time": row.get("start_time"),
-        "end_time": row.get("end_time"),
-        "deep_minutes": row.get("deep_minutes"),
-        "light_minutes": row.get("light_minutes"),
-        "rem_minutes": row.get("rem_minutes"),
-        "wake_minutes": row.get("wake_minutes"),
-        "sessions": row.get("sessions"),
-    }
-    conn.execute(
-        """INSERT OR REPLACE INTO sleep
-        (date, total_minutes, efficiency, start_time, end_time,
-         deep_minutes, light_minutes, rem_minutes, wake_minutes, sessions)
-        VALUES (:date, :total_minutes, :efficiency, :start_time, :end_time,
-                :deep_minutes, :light_minutes, :rem_minutes, :wake_minutes, :sessions)""",
-        params,
-    )
+    _upsert(conn, "sleep", row)
 
 
 def save_weight(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO weight
-        (date, weight_kg, bmi, fat_pct)
-        VALUES (:date, :weight_kg, :bmi, :fat_pct)""",
-        row,
-    )
+    _upsert(conn, "weight", row)
 
 
 def save_spo2(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        "INSERT OR REPLACE INTO spo2 (date, avg, min, max) VALUES (:date, :avg, :min, :max)",
-        row,
-    )
+    _upsert(conn, "spo2", row)
 
 
 def save_hrv(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO hrv
-        (date, daily_rmssd, deep_rmssd)
-        VALUES (:date, :daily_rmssd, :deep_rmssd)""",
-        row,
-    )
+    _upsert(conn, "hrv", row)
 
 
 def save_azm(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO azm
-        (date, total_minutes, fat_burn_minutes, cardio_minutes, peak_minutes)
-        VALUES (:date, :total_minutes, :fat_burn_minutes, :cardio_minutes, :peak_minutes)""",
-        row,
-    )
+    _upsert(conn, "azm", row)
 
 
 def save_breathing_rate(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO breathing_rate
-        (date, breaths_per_min)
-        VALUES (:date, :breaths_per_min)""",
-        row,
-    )
+    _upsert(conn, "breathing_rate", row)
 
 
 def save_skin_temperature(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO skin_temperature (date, nightly_relative, log_type)
-        VALUES (:date, :nightly_relative, :log_type)""",
-        row,
-    )
+    _upsert(conn, "skin_temperature", row)
 
 
 def save_core_temperature(conn: sqlite3.Connection, row: dict) -> int:
@@ -283,20 +272,11 @@ def save_core_temperature(conn: sqlite3.Connection, row: dict) -> int:
 
 
 def save_cardio_fitness(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO cardio_fitness (date, vo2_max_low, vo2_max_high)
-        VALUES (:date, :vo2_max_low, :vo2_max_high)""",
-        row,
-    )
+    _upsert(conn, "cardio_fitness", row)
 
 
 def save_food_log(conn: sqlite3.Connection, row: dict):
-    conn.execute(
-        """INSERT OR REPLACE INTO food_log
-        (date, calories_in, water_ml)
-        VALUES (:date, :calories_in, :water_ml)""",
-        row,
-    )
+    _upsert(conn, "food_log", row)
 
 
 def log_sync(

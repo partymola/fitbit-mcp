@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Saving a record updates the columns the writer supplied and leaves the rest as they were, instead of replacing the whole row. `INSERT OR REPLACE` is delete-then-insert in SQLite, so any column a writer did not name was set to NULL each time an already-cached day was written again. Naming a column with an explicit null still clears it, so withdrawing a value the API no longer reports stays possible - omitting a column and nulling it are now separate instructions rather than one. Nothing already cached changes on upgrade; the difference a user can see is that running `import` over a synced cache no longer clears the sleep `sessions` count.
+
 ## [0.5.3] - 2026-08-09
 
 ### Fixed

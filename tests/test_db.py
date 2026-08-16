@@ -1,5 +1,7 @@
 """Tests for the SQLite database layer."""
 
+import pytest
+
 from fitbit_mcp import db
 
 
@@ -315,7 +317,7 @@ class TestSaveAndQuery:
 
 
 class TestUpsert:
-    """Test that INSERT OR REPLACE works correctly."""
+    """A writer that names a column wins, whatever the stored value was."""
 
     def test_heart_rate_upsert(self, tmp_db):
         db.save_heart_rate(tmp_db, "2026-03-15", 60, [])
@@ -400,6 +402,150 @@ class TestUpsert:
         rows = db.query_exercises(tmp_db, "2026-03-15", "2026-03-15")
         assert len(rows) == 1
         assert rows[0]["duration_min"] == 45
+
+
+def _seed_0x_era_rows(conn):
+    """One day of rows holding values a later, partial writer has no source for."""
+    db.save_sleep(
+        conn,
+        {
+            "date": "2026-03-15",
+            "total_minutes": 430,
+            "efficiency": 91,
+            "start_time": "2026-03-14T23:10:00",
+            "end_time": "2026-03-15T06:40:00",
+            "deep_minutes": 70,
+            "light_minutes": 260,
+            "rem_minutes": 100,
+            "wake_minutes": 40,
+            "sessions": 1,
+        },
+    )
+    db.save_weight(conn, {"date": "2026-03-15", "weight_kg": 72.0, "bmi": 25.0, "fat_pct": 18.0})
+    db.save_spo2(conn, {"date": "2026-03-15", "avg": 95.0, "min": 91.0, "max": 99.0})
+    db.save_cardio_fitness(conn, {"date": "2026-03-15", "vo2_max_low": 38.0, "vo2_max_high": 42.0})
+    db.save_exercise(
+        conn,
+        "log1",
+        {
+            "date": "2026-03-15",
+            "name": "Walk",
+            "duration_min": 30,
+            "calories": 150,
+            "avg_hr": 100,
+            "steps": 3000,
+            "distance_km": 2.0,
+            "distance_unit": "Kilometer",
+            "start_time": "2026-03-15T08:00:00",
+            "source": "Tracker",
+            "log_type": "auto_detected",
+        },
+    )
+    conn.commit()
+
+
+class TestAWriterKeepsWhatItDoesNotName:
+    """A writer that names a subset of columns leaves the rest as they were.
+
+    INSERT OR REPLACE is delete-then-insert, so a partial write nulls every
+    column it does not name.
+    """
+
+    def test_sleep_efficiency_survives_a_writer_that_omits_it(self, tmp_db):
+        _seed_0x_era_rows(tmp_db)
+        db.save_sleep(tmp_db, {"date": "2026-03-15", "total_minutes": 440, "deep_minutes": 75})
+        tmp_db.commit()
+        row = db.query_sleep(tmp_db, "2026-03-15", "2026-03-15")[0]
+        assert row["efficiency"] == 91
+        assert row["total_minutes"] == 440
+        assert row["deep_minutes"] == 75
+        assert row["rem_minutes"] == 100
+
+    def test_weight_bmi_survives_a_writer_that_omits_it(self, tmp_db):
+        _seed_0x_era_rows(tmp_db)
+        db.save_weight(tmp_db, {"date": "2026-03-15", "weight_kg": 71.5})
+        tmp_db.commit()
+        row = db.query_weight(tmp_db, "2026-03-15", "2026-03-15")[0]
+        assert row["bmi"] == 25.0
+        assert row["fat_pct"] == 18.0
+        assert row["weight_kg"] == 71.5
+
+    def test_spo2_bounds_survive_a_writer_that_supplies_only_an_average(self, tmp_db):
+        _seed_0x_era_rows(tmp_db)
+        db.save_spo2(tmp_db, {"date": "2026-03-15", "avg": 96.0})
+        tmp_db.commit()
+        row = db.query_spo2(tmp_db, "2026-03-15", "2026-03-15")[0]
+        assert row["min"] == 91.0
+        assert row["max"] == 99.0
+        assert row["avg"] == 96.0
+
+    def test_a_stored_vo2_max_range_survives_a_scalar_writer(self, tmp_db):
+        _seed_0x_era_rows(tmp_db)
+        db.save_cardio_fitness(tmp_db, {"date": "2026-03-15", "vo2_max_low": 39.0})
+        tmp_db.commit()
+        row = db.query_cardio_fitness(tmp_db, "2026-03-15", "2026-03-15")[0]
+        assert row["vo2_max_high"] == 42.0
+        assert row["vo2_max_low"] == 39.0
+
+    def test_exercise_source_survives_a_writer_that_omits_it(self, tmp_db):
+        _seed_0x_era_rows(tmp_db)
+        db.save_exercise(tmp_db, "log1", {"date": "2026-03-15", "calories": 165})
+        tmp_db.commit()
+        row = db.query_exercises(tmp_db, "2026-03-15", "2026-03-15")[0]
+        assert row["source"] == "Tracker"
+        assert row["log_type"] == "auto_detected"
+        assert row["calories"] == 165
+
+    def test_a_named_column_is_still_corrected(self, tmp_db):
+        """Preserving what is absent must not also freeze what is present."""
+        _seed_0x_era_rows(tmp_db)
+        db.save_sleep(tmp_db, {"date": "2026-03-15", "efficiency": 65})
+        tmp_db.commit()
+        assert db.query_sleep(tmp_db, "2026-03-15", "2026-03-15")[0]["efficiency"] == 65
+
+    def test_a_named_column_can_still_be_cleared(self, tmp_db):
+        """Omitted and explicitly None are different instructions, not one.
+
+        COALESCE(excluded.col, col) would collapse them, leaving no way to
+        withdraw a value a provider has retracted.
+        """
+        _seed_0x_era_rows(tmp_db)
+        db.save_sleep(tmp_db, {"date": "2026-03-15", "efficiency": None})
+        tmp_db.commit()
+        assert db.query_sleep(tmp_db, "2026-03-15", "2026-03-15")[0]["efficiency"] is None
+
+    def test_a_row_naming_only_its_key_leaves_the_day_alone(self, tmp_db):
+        _seed_0x_era_rows(tmp_db)
+        db.save_weight(tmp_db, {"date": "2026-03-15"})
+        tmp_db.commit()
+        row = db.query_weight(tmp_db, "2026-03-15", "2026-03-15")[0]
+        assert row["weight_kg"] == 72.0
+        assert row["bmi"] == 25.0
+
+    def test_a_row_naming_only_its_key_stores_no_new_day(self, tmp_db):
+        """An all-NULL row would report the day as synced and hold no data."""
+        db.save_weight(tmp_db, {"date": "2026-03-20"})
+        tmp_db.commit()
+        assert db.query_weight(tmp_db, "2026-03-20", "2026-03-20") == []
+        assert db.get_last_synced_date(tmp_db, "weight") is None
+
+    def test_an_unknown_column_is_refused(self, tmp_db):
+        """Column names reach the SQL text, so they are checked against the table."""
+        with pytest.raises(ValueError, match="waist_cm"):
+            db.save_weight(tmp_db, {"date": "2026-03-15", "waist_cm": 80.0})
+
+    def test_a_row_without_its_key_is_refused(self, tmp_db):
+        with pytest.raises(ValueError, match="date"):
+            db.save_weight(tmp_db, {"weight_kg": 72.0})
+
+    def test_a_key_named_but_left_none_is_refused(self, tmp_db):
+        """Naming the key is not the same as identifying the row.
+
+        SQLite accepts NULL in a TEXT primary key, so a check keyed on the
+        column being present admits a row no later write can ever find again.
+        """
+        with pytest.raises(ValueError, match="date"):
+            db.save_weight(tmp_db, {"date": None, "weight_kg": 72.0})
 
 
 class TestDateRanges:
