@@ -48,7 +48,10 @@ _GOOGLE_CLIENT_ID_SUFFIX = ".apps.googleusercontent.com"
 
 # Columns db._migrate() adds to an older database on the next open. Keep in
 # step with it: listing one here that it does not add hides a real fault.
-_SELF_HEALING_COLUMNS = {("sync_log", "last_date_attempted"), ("sleep", "sessions")}
+# Derived, not restated: a column db._migrate() repairs is one this check must
+# excuse, and two hand-kept lists would drift. The lockstep test still probes
+# what _migrate actually does rather than trusting the declaration.
+_SELF_HEALING_COLUMNS = {(table, column) for table, column, _ in db.MIGRATIONS}
 
 # A cache older than this has stopped being updated rather than merely lagging.
 # Auto-sync refreshes each type at most once a day, so three days without a new

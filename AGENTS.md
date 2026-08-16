@@ -77,17 +77,26 @@ SQLite at `~/.local/share/fitbit-mcp/fitbit.db` (gitignored). The exact column d
 - `heart_rate` - date, resting_hr, zones (JSON)
 - `activity` - date, steps, calories_out, active_minutes, very/fairly/lightly active, sedentary, floors, distance_km
 - `exercises` - log_id, date, name, duration_min, calories, avg_hr, steps, distance_km, start_time, source, log_type
-- `sleep` - date, total_minutes, efficiency, start/end_time, deep/light/rem/wake_minutes, sessions (one row per night; a fragmented night's sessions are summed, `sessions` > 1 flags the split)
+- `sleep` - date, total_minutes, efficiency, start/end_time, deep/light/rem/wake_minutes, sessions (one row per night; a fragmented night's sessions are summed, `sessions` > 1 flags the split), sleep_period_minutes
 - `weight` - date, weight_kg, bmi, fat_pct
-- `spo2` - date, avg, min, max
+- `spo2` - date, avg, min, max, avg_ci_low, avg_ci_high
 - `hrv` - date, daily_rmssd, deep_rmssd
 - `azm` - date, total_minutes, fat_burn_minutes, cardio_minutes, peak_minutes
 - `breathing_rate` - date, breaths_per_min
-- `skin_temperature` - date, nightly_relative (degrees C from baseline), log_type
-- `core_temperature` - datetime (YYYY-MM-DDThh:mm:ss), date, temp_celsius; PRIMARY KEY (datetime, temp_celsius) - manually-logged body temp keyed by timestamp+value so multiple (even same-second) readings per day are preserved while exact repeats de-dup
-- `cardio_fitness` - date, vo2_max_low, vo2_max_high (Fitbit reports as a range)
+- `skin_temperature` - date, nightly_relative (degrees C from baseline), log_type, nightly_absolute, baseline
+- `core_temperature` - datetime (YYYY-MM-DDThh:mm:ss), date, temp_celsius; PRIMARY KEY (datetime, temp_celsius) - manually-logged body temp keyed by timestamp+value so multiple (even same-second) readings per day are preserved while exact repeats de-dup. **Its `provider` is currently unwritable and stays NULL**: `save_core_temperature` is `INSERT OR IGNORE` over three named columns and the table is deliberately outside `_UPSERT_KEYS`, so a writer that wants to set it must name it. The seam test skips this helper by name and will not notice
+- `cardio_fitness` - date, vo2_max_low, vo2_max_high (Fitbit reports as a range), vo2_max
 - `food_log` - date, calories_in, water_ml
 - `sync_log` - sync history (used by auto-sync to decide when to re-fetch)
+
+**`provider` is on every table above except `sync_log`**, whose `data_type` and timestamp already carry that. It names **the provider of the most recent write, not of the row** - an upsert keeps columns the new writer did not name, so a row can hold one provider's efficiency beside another's stage minutes and `provider` says only who wrote last. NULL means no writer has set it, which in practice is the 0.x era. Any writer that is not the original Fitbit one must name it on every write, or a row it corrects keeps the previous provider's name.
+
+**Four columns exist because the same quantity is defined differently by different providers, and merging them would corrupt a series rather than break it.** Never widen one to hold both.
+
+- `spo2.avg_ci_low`/`avg_ci_high` are a **confidence interval on the average** (`lowerBoundPercentage`/`upperBoundPercentage`), not observed extremes. `min`/`max` are the observed nightly extremes. Averaging the two definitions in one trend reports a step change that reads as physiological.
+- `cardio_fitness.vo2_max` is a **single value**; `vo2_max_low`/`vo2_max_high` are a reported range. Writing one value into both ends collapses a real band to a point.
+- `skin_temperature.nightly_absolute` and `baseline` are absolute degrees C. `nightly_relative` is their difference, which is what the Fitbit era stored, so the series continues by subtraction rather than restarting.
+- `sleep.sleep_period_minutes` is **not** Fitbit's time-in-bed. It is `minutesInSleepPeriod`, the delta between bedtime and wake time. It makes a *stated* efficiency computable; do not use it to reconstruct `efficiency`, which has no source outside the Fitbit era and stays NULL rather than being approximated.
 
 ## Running tests
 

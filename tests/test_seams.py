@@ -76,14 +76,20 @@ def test_the_declared_version_and_the_lockfile_agree():
     )
 
 
-def _columns(conn) -> dict[str, set[str]]:
+def _columns(conn) -> dict[str, set[tuple[str, str]]]:
+    """Name and declared type, because a migration can get the type wrong silently.
+
+    An ALTER declaring TEXT where SCHEMA says REAL leaves an upgraded database
+    storing a number as text while a fresh install stores it as a number: the
+    two sort differently and doctor calls both healthy.
+    """
     tables = [
         r[0]
         for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
     ]
-    return {t: {r[1] for r in conn.execute(f"PRAGMA table_info('{t}')")} for t in tables}
+    return {t: {(r[1], r[2]) for r in conn.execute(f"PRAGMA table_info('{t}')")} for t in tables}
 
 
 def _baselines() -> list[Path]:
@@ -164,7 +170,7 @@ class TestTheMigrationLockstep:
             added |= {
                 (table, column)
                 for table, columns in before.items()
-                for column in after[table] - columns
+                for column, _declared in after[table] - columns
             }
         assert added == doctor._SELF_HEALING_COLUMNS
 

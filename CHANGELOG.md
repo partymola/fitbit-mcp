@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Columns for measurements a future data source reports differently, added to existing databases on the next open rather than needing a re-import: a confidence interval on the nightly SpO2 average beside the observed extremes, a single VO2 max beside the reported range, absolute and baseline skin temperature beside the relative figure the cache already held, the length of the sleep period, and a `provider` column on every table. They are all empty until something fills them, and nothing reads them yet. Each is a separate column rather than a widened one because the same name would otherwise hold two definitions - an average's confidence bounds are not the night's highest and lowest reading, and a trend that averaged them together would report the switchover as a change in the body rather than in the source. One caveat if several machines share one database file: a database these columns have been added to, then written by 0.5.3, loses their values on every row that version touches, because it replaces whole rows and does not know the new columns exist. Upgrade every host that writes, or point the older one somewhere else.
+
 ### Changed
 
 - Saving a record updates the columns the writer supplied and leaves the rest as they were, instead of replacing the whole row. `INSERT OR REPLACE` is delete-then-insert in SQLite, so any column a writer did not name was set to NULL each time an already-cached day was written again. Naming a column with an explicit null still clears it, so withdrawing a value the API no longer reports stays possible - omitting a column and nulling it are now separate instructions rather than one. Nothing already cached changes on upgrade; the difference a user can see is that running `import` over a synced cache no longer clears the sleep `sessions` count.

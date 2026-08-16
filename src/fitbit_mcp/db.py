@@ -13,7 +13,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS heart_rate (
     date TEXT PRIMARY KEY,
     resting_hr INTEGER,
-    zones TEXT
+    zones TEXT,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS activity (
@@ -26,7 +27,8 @@ CREATE TABLE IF NOT EXISTS activity (
     lightly_active_minutes INTEGER,
     sedentary_minutes INTEGER,
     floors INTEGER,
-    distance_km REAL
+    distance_km REAL,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exercises (
@@ -41,7 +43,8 @@ CREATE TABLE IF NOT EXISTS exercises (
     distance_unit TEXT,
     start_time TEXT,
     source TEXT,
-    log_type TEXT
+    log_type TEXT,
+    provider TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_exercises_date ON exercises(date);
@@ -56,27 +59,34 @@ CREATE TABLE IF NOT EXISTS sleep (
     light_minutes INTEGER,
     rem_minutes INTEGER,
     wake_minutes INTEGER,
-    sessions INTEGER
+    sessions INTEGER,
+    sleep_period_minutes INTEGER,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS weight (
     date TEXT PRIMARY KEY,
     weight_kg REAL,
     bmi REAL,
-    fat_pct REAL
+    fat_pct REAL,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS spo2 (
     date TEXT PRIMARY KEY,
     avg REAL,
     min REAL,
-    max REAL
+    max REAL,
+    avg_ci_low REAL,
+    avg_ci_high REAL,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS hrv (
     date TEXT PRIMARY KEY,
     daily_rmssd REAL,
-    deep_rmssd REAL
+    deep_rmssd REAL,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS azm (
@@ -84,24 +94,30 @@ CREATE TABLE IF NOT EXISTS azm (
     total_minutes INTEGER,
     fat_burn_minutes INTEGER,
     cardio_minutes INTEGER,
-    peak_minutes INTEGER
+    peak_minutes INTEGER,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS breathing_rate (
     date TEXT PRIMARY KEY,
-    breaths_per_min REAL
+    breaths_per_min REAL,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS skin_temperature (
     date TEXT PRIMARY KEY,
     nightly_relative REAL,
-    log_type TEXT
+    log_type TEXT,
+    nightly_absolute REAL,
+    baseline REAL,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS core_temperature (
     datetime TEXT NOT NULL,
     date TEXT NOT NULL,
     temp_celsius REAL,
+    provider TEXT,
     PRIMARY KEY (datetime, temp_celsius)
 );
 
@@ -110,13 +126,16 @@ CREATE INDEX IF NOT EXISTS idx_core_temperature_date ON core_temperature(date);
 CREATE TABLE IF NOT EXISTS cardio_fitness (
     date TEXT PRIMARY KEY,
     vo2_max_low REAL,
-    vo2_max_high REAL
+    vo2_max_high REAL,
+    vo2_max REAL,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS food_log (
     date TEXT PRIMARY KEY,
     calories_in INTEGER,
-    water_ml REAL
+    water_ml REAL,
+    provider TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sync_log (
@@ -131,17 +150,41 @@ CREATE TABLE IF NOT EXISTS sync_log (
 """
 
 
+# Every column added to a table after that table shipped, so an existing
+# database gains it on open. A column here and not in SCHEMA, or the reverse,
+# fails TestTheMigrationLockstep - see AGENTS.md.
+MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("sync_log", "last_date_attempted", "TEXT"),
+    ("sleep", "sessions", "INTEGER"),
+    ("sleep", "sleep_period_minutes", "INTEGER"),
+    ("spo2", "avg_ci_low", "REAL"),
+    ("spo2", "avg_ci_high", "REAL"),
+    ("cardio_fitness", "vo2_max", "REAL"),
+    ("skin_temperature", "nightly_absolute", "REAL"),
+    ("skin_temperature", "baseline", "REAL"),
+    ("activity", "provider", "TEXT"),
+    ("azm", "provider", "TEXT"),
+    ("breathing_rate", "provider", "TEXT"),
+    ("cardio_fitness", "provider", "TEXT"),
+    ("core_temperature", "provider", "TEXT"),
+    ("exercises", "provider", "TEXT"),
+    ("food_log", "provider", "TEXT"),
+    ("heart_rate", "provider", "TEXT"),
+    ("hrv", "provider", "TEXT"),
+    ("skin_temperature", "provider", "TEXT"),
+    ("sleep", "provider", "TEXT"),
+    ("spo2", "provider", "TEXT"),
+    ("weight", "provider", "TEXT"),
+)
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Apply additive schema migrations to older DBs. Idempotent."""
-    sync_log_cols = {r["name"] for r in conn.execute("PRAGMA table_info(sync_log)").fetchall()}
-    if "last_date_attempted" not in sync_log_cols:
-        conn.execute("ALTER TABLE sync_log ADD COLUMN last_date_attempted TEXT")
-        conn.commit()
-
-    sleep_cols = {r["name"] for r in conn.execute("PRAGMA table_info(sleep)").fetchall()}
-    if "sessions" not in sleep_cols:
-        conn.execute("ALTER TABLE sleep ADD COLUMN sessions INTEGER")
-        conn.commit()
+    for table, column, declaration in MIGRATIONS:
+        present = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in present:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+    conn.commit()
 
 
 def get_db(db_path: Path | str | None = None) -> sqlite3.Connection:
