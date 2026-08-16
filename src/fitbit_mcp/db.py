@@ -7,6 +7,8 @@ from pathlib import Path
 
 from .config import DB_PATH
 
+# Changing this? Copy the outgoing schema into tests/schema_baselines/ and add
+# the migration - see AGENTS.md, "Seams the suite does not cross".
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS heart_rate (
     date TEXT PRIMARY KEY,

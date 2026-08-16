@@ -7,10 +7,12 @@ someone went looking. See AGENTS.md, "Seams the suite does not cross".
 """
 
 import ast
+import sqlite3
 import tomllib
 from pathlib import Path
 
 import fitbit_mcp
+from fitbit_mcp import db, doctor
 
 _PATH_NAMES = {
     "CONFIG_DIR",
@@ -72,3 +74,96 @@ def test_the_declared_version_and_the_lockfile_agree():
     assert ours[0]["version"] == declared, (
         f"pyproject.toml says {declared}, uv.lock says {ours[0]['version']} - run `uv lock`"
     )
+
+
+def _columns(conn) -> dict[str, set[str]]:
+    tables = [
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+    ]
+    return {t: {r[1] for r in conn.execute(f"PRAGMA table_info('{t}')")} for t in tables}
+
+
+def _baselines() -> list[Path]:
+    """One file per schema this package has released, oldest first.
+
+    A single baseline is not enough. A table absent from it is created whole
+    by `CREATE TABLE IF NOT EXISTS`, so a column added to that table needs no
+    migration to satisfy the check - while the database of a user who has that
+    table and not that column still breaks. Covering every vintage is what
+    makes the check say what it claims. Add the outgoing schema here whenever
+    SCHEMA changes; never edit one in place.
+    """
+    found = sorted((Path(__file__).parent / "schema_baselines").glob("*.sql"))
+    assert found, "no baselines - the lockstep check would pass on nothing"
+    return found
+
+
+def _built_from(path: Path, baseline: Path) -> dict[str, set[str]]:
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.executescript(baseline.read_text())
+        conn.commit()
+        return _columns(conn)
+    finally:
+        conn.close()
+
+
+def _current_schema_columns() -> dict[str, set[str]]:
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.executescript(db.SCHEMA)
+        return _columns(conn)
+    finally:
+        conn.close()
+
+
+class TestTheMigrationLockstep:
+    """The lists a schema change has to move together.
+
+    Every test builds its own database, so nothing a user could sync changes
+    the answer. Break the lockstep and doctor tells a user with years of
+    history to "re-create and re-import" a database that only needed an ALTER.
+    """
+
+    def test_every_supported_database_gains_this_versions_schema(self, tmp_path):
+        """A column added to SCHEMA reaches an existing database only via _migrate.
+
+        CREATE TABLE IF NOT EXISTS creates whole tables and nothing else, so a
+        new column with no ALTER beside it exists on fresh installs only.
+        """
+        expected = _current_schema_columns()
+        for baseline in _baselines():
+            path = tmp_path / f"{baseline.stem}.db"
+            _built_from(path, baseline)
+            conn = db.get_db(path)
+            try:
+                assert _columns(conn) == expected, baseline.stem
+            finally:
+                conn.close()
+
+    def test_self_healing_columns_is_exactly_what_migrate_adds(self, tmp_path):
+        """doctor excuses a missing column only where _migrate will restore it.
+
+        Too few entries and an ordinary upgrade reports FAIL; too many and a
+        column that really is unrepairable is waved through as self-healing.
+        """
+        added = set()
+        for baseline in _baselines():
+            path = tmp_path / f"{baseline.stem}.db"
+            before = _built_from(path, baseline)
+            conn = db.get_db(path)
+            try:
+                after = _columns(conn)
+            finally:
+                conn.close()
+            # Only tables the baseline had: one it lacked arrives whole, and
+            # its columns are not something _migrate added.
+            added |= {
+                (table, column)
+                for table, columns in before.items()
+                for column in after[table] - columns
+            }
+        assert added == doctor._SELF_HEALING_COLUMNS

@@ -49,6 +49,7 @@ Tests are fully offline - no real API calls, no real tokens. Fixtures use fictio
 - **Open an issue first** for non-trivial changes (new tools, schema migrations, new data types, breaking changes). Small fixes (typos, bug fixes, docs) can go straight to a PR.
 - Keep PRs small and focused.
 - Add or update tests for any behaviour change.
+- **Changing the database schema takes three edits, not one**: the column in `SCHEMA`, an `ALTER` in `db._migrate()` so existing databases get it, and the outgoing schema copied into `tests/schema_baselines/` so the check can see that they do. Skip the second and `fitbit-mcp doctor` tells a user with years of history to re-create their cache. Skip the third and nothing complains at all - the check simply stops covering the table you changed.
 - Run `pytest tests/ -v` before opening a PR.
 
 ## Releases (maintainers)
