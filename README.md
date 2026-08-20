@@ -8,6 +8,14 @@
 [![PyPI](https://img.shields.io/pypi/v/fitbit-mcp)](https://pypi.org/project/fitbit-mcp/)
 [![Glama MCP Server](https://glama.ai/mcp/servers/partymola/fitbit-mcp/badges/score.svg)](https://glama.ai/mcp/servers/partymola/fitbit-mcp)
 
+> **Retired. Use [google-health-mcp](https://github.com/partymola/google-health-mcp) instead.**
+>
+> The Fitbit Web API shuts down on [**30 September 2026**](https://support.google.com/googlehealth/thread/439040688). Fitbit has also stopped accepting new app registrations, so this package can no longer be set up from scratch: [step 2](#2-register-a-fitbit-app) below needs a registered personal app and there is no longer a way to create one. An existing install keeps working until the shutdown date.
+>
+> `google-health-mcp` covers the same measurements through the Google Health API, and adds ECG and irregular-rhythm notifications. It reads history from Google rather than from this package's cache, so there is nothing to migrate: install it and run one backfill.
+>
+> Not everything carries over. Fitbit's activity goals and its server-side lifetime totals have no equivalent there, and among the fields Google does not serve are heart rate zones, the active-minutes breakdown, VO2 max as a range rather than a single number, sleep efficiency, SpO2 high and low, and BMI. After 30 September this package can no longer fetch them either, so copy your `fitbit.db` before then if you want to keep them.
+
 MCP server for the Fitbit Web API with OAuth PKCE, local SQLite cache, and trend analysis.
 
 Designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and other [MCP](https://modelcontextprotocol.io/) clients. Syncs your Fitbit data to a local database for fast, offline queries - no API calls needed after the initial sync.

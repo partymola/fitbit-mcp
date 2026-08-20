@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-20
+
+### Deprecated
+
+- This package is retired in favour of [google-health-mcp](https://github.com/partymola/google-health-mcp), which covers the same measurements through the Google Health API. The Fitbit Web API shuts down on 30 September 2026, and Fitbit has already stopped accepting new app registrations, so this package can no longer be set up from scratch - the setup steps ask for a registered personal app and there is no longer a way to create one. An existing install keeps working until the shutdown date. The replacement reads history from Google rather than from this cache, so there is no cache to migrate. Not everything carries over, though: activity goals and the server-side lifetime totals have no equivalent there, and the fields Google does not serve include heart rate zones, the active-minutes breakdown, the VO2 max range, sleep efficiency, SpO2 high and low, and BMI. This package cannot fetch any of them after the shutdown either, so keep a copy of `fitbit.db` if you want them.
+
 ### Added
 
 - Columns for measurements a future data source reports differently, added to existing databases on the next open rather than needing a re-import: a confidence interval on the nightly SpO2 average beside the observed extremes, a single VO2 max beside the reported range, absolute and baseline skin temperature beside the relative figure the cache already held, the length of the sleep period, and a `provider` column on every table. They are all empty until something fills them, and nothing reads them yet. Each is a separate column rather than a widened one because the same name would otherwise hold two definitions - an average's confidence bounds are not the night's highest and lowest reading, and a trend that averaged them together would report the switchover as a change in the body rather than in the source. One caveat if several machines share one database file: a database these columns have been added to, then written by 0.5.3, loses their values on every row that version touches, because it replaces whole rows and does not know the new columns exist. Upgrade every host that writes, or point the older one somewhere else.
@@ -146,7 +152,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic rate-limit retry on 429 responses.
 - Pre-commit hook (`scripts/check-no-data.sh`) blocking commit of databases, tokens, and other secrets.
 
-[Unreleased]: https://github.com/partymola/fitbit-mcp/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/partymola/fitbit-mcp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/partymola/fitbit-mcp/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/partymola/fitbit-mcp/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/partymola/fitbit-mcp/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/partymola/fitbit-mcp/compare/v0.5.0...v0.5.1

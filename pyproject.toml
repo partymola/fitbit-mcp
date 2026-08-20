@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitbit-mcp"
-version = "0.5.3"
-description = "MCP server for the Fitbit Web API with OAuth PKCE, local cache, and trend analysis."
+version = "0.6.0"
+description = "Retired, superseded by google-health-mcp. MCP server for the Fitbit Web API, which shuts down on 30 September 2026."
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -15,7 +15,7 @@ authors = [
     {name = "jjdelrio", email = "641373+partymola@users.noreply.github.com"},
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 7 - Inactive",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
@@ -38,6 +38,7 @@ fitbit-mcp = "fitbit_mcp.cli:main"
 Homepage = "https://github.com/partymola/fitbit-mcp"
 Repository = "https://github.com/partymola/fitbit-mcp"
 "Bug Tracker" = "https://github.com/partymola/fitbit-mcp/issues"
+Successor = "https://github.com/partymola/google-health-mcp"
 
 [tool.setuptools.packages.find]
 where = ["src"]
